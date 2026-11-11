@@ -1,14 +1,20 @@
 // Package plus contains listmonk-plus additions to Listmonk: the event log
-// (plus_events) and, later, sequences and the trigger engine.
+// (plus_events), sequences, and later the trigger engine.
 //
 // Fork rule: code lives here; upstream files only get small, documented hooks
 // (see plus/UPSTREAM-TOUCHPOINTS.md).
 package plus
 
 import (
+	"context"
 	"log"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/knadh/listmonk/internal/core"
+	"github.com/knadh/listmonk/internal/manager"
 	"github.com/lib/pq"
 )
 
@@ -21,15 +27,113 @@ const (
 	EvSubRepeated     = "subscription.repeated"
 )
 
+// Permissions (declared in permissions.json).
+const (
+	PermSequencesGet    = "sequences:get"
+	PermSequencesManage = "sequences:manage"
+)
+
+// Opt holds the dependencies and settings for Plus.
+type Opt struct {
+	DB      *sqlx.DB
+	Log     *log.Logger
+	Core    *core.Core
+	Manager *manager.Manager
+
+	// Public root URL of the Listmonk install (for links in emails).
+	RootURL string
+
+	// Default "From" address (Listmonk's app.from_email).
+	FromEmail string
+
+	// How often the worker looks for events and due steps.
+	WorkerInterval time.Duration
+
+	// Max events / sends handled per worker pass.
+	BatchSize int
+}
+
 // Plus is the entry point for listmonk-plus features.
 type Plus struct {
+	opt Opt
 	db  *sqlx.DB
 	log *log.Logger
+
+	wake   chan struct{}
+	cancel context.CancelFunc
+	done   chan struct{}
+	mu     sync.Mutex
 }
 
 // New returns a new Plus instance.
-func New(db *sqlx.DB, lo *log.Logger) *Plus {
-	return &Plus{db: db, log: lo}
+func New(o Opt) *Plus {
+	if o.WorkerInterval <= 0 {
+		o.WorkerInterval = 15 * time.Second
+	}
+	if o.BatchSize <= 0 {
+		o.BatchSize = 200
+	}
+	o.RootURL = strings.TrimRight(o.RootURL, "/")
+
+	return &Plus{
+		opt:  o,
+		db:   o.DB,
+		log:  o.Log,
+		wake: make(chan struct{}, 1),
+	}
+}
+
+// Run starts the sequence worker. It blocks until Close() is called, so run it
+// in a goroutine.
+func (p *Plus) Run() {
+	ctx, cancel := context.WithCancel(context.Background())
+	p.mu.Lock()
+	p.cancel = cancel
+	p.done = make(chan struct{})
+	done := p.done
+	p.mu.Unlock()
+	defer close(done)
+
+	p.log.Printf("listmonk-plus: sequence worker started (interval %s)", p.opt.WorkerInterval)
+	t := time.NewTicker(p.opt.WorkerInterval)
+	defer t.Stop()
+
+	for {
+		p.runOnce(ctx)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		case <-p.wake:
+		}
+	}
+}
+
+// Close stops the worker and waits (briefly) for the current pass to finish.
+// It must be called before the campaign manager is closed, as the worker pushes
+// messages into the manager's queue.
+func (p *Plus) Close() {
+	p.mu.Lock()
+	cancel, done := p.cancel, p.done
+	p.mu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		p.log.Printf("listmonk-plus: worker did not stop within 5s")
+	}
+}
+
+// Wake asks the worker to run a pass now instead of waiting for the next tick.
+func (p *Plus) Wake() {
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
 }
 
 // ActiveListIDs returns the IDs of the given lists (by UUID) that the subscriber
@@ -68,5 +172,7 @@ func (p *Plus) RecordRepeated(subID int, listIDs []int, source string) {
 		  AND sl.status IN ('unconfirmed', 'confirmed')
 		ORDER BY sl.list_id`, EvSubRepeated, subID, pq.Array(listIDs), source); err != nil {
 		p.log.Printf("listmonk-plus: error recording %s for %d: %v", EvSubRepeated, subID, err)
+		return
 	}
+	p.Wake()
 }

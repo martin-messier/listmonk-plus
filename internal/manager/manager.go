@@ -22,6 +22,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/notifs"
+	"github.com/knadh/listmonk/internal/plus/tplfuncs" // listmonk-plus
 	"github.com/knadh/listmonk/models"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -703,6 +704,9 @@ func (m *Manager) makeGnericFuncMap() template.FuncMap {
 	delete(sprigFuncs, "getHostByName")
 
 	maps.Copy(funcs, sprigFuncs)
+
+	// listmonk-plus: placeholders for sequence template functions (e.g. SequenceNextURL).
+	maps.Copy(funcs, tplfuncs.Placeholders())
 
 	return funcs
 }

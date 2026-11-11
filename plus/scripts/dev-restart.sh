@@ -16,7 +16,8 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 
-dc exec -d dev sh -c 'make run > /tmp/listmonk-run.log 2>&1'
+# PLUS_WORKER_INTERVAL (e.g. 2s) speeds up the sequence worker for testing. Default 15s.
+dc exec -d -e "LISTMONK_plus__worker_interval=${PLUS_WORKER_INTERVAL:-15s}" dev sh -c 'make run > /tmp/listmonk-run.log 2>&1'
 
 for i in $(seq 1 120); do
   sleep 2

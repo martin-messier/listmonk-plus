@@ -298,7 +298,16 @@ func main() {
 		log:        lo,
 		events:     evStream,
 		bufLog:     bufLog,
-		plus:       plus.New(db, lo), // listmonk-plus
+		// listmonk-plus
+		plus: plus.New(plus.Opt{
+			DB:             db,
+			Log:            lo,
+			Core:           core,
+			Manager:        mgr,
+			RootURL:        urlCfg.RootURL,
+			FromEmail:      cfg.FromEmail,
+			WorkerInterval: ko.Duration("plus.worker_interval"),
+		}),
 
 		pg: paginator.New(paginator.Opt{
 			DefaultPerPage: 20,
@@ -320,6 +329,9 @@ func main() {
 	// i18n JSON string for admin HTML pages.
 	app.adminI18nJS = app.makeAdminJSI18n()
 
+	// listmonk-plus: start the sequence worker.
+	go app.plus.Run()
+
 	// Star the update checker.
 	if ko.Bool("app.check_updates") {
 		go app.checkUpdates(versionString, time.Hour*24)
@@ -340,6 +352,9 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)
+
+		// listmonk-plus: stop the sequence worker before the manager's queue closes.
+		app.plus.Close()
 
 		// Close the campaign manager.
 		mgr.Close()

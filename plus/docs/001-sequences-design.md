@@ -267,9 +267,9 @@ Permissions (added to `permissions.json`): `sequences:get`, `sequences:manage`.
 
 ## 12. Milestones
 
-1. **Foundation**: `plus_migrations` runner, tables, trigger, `subscription.repeated` hook.
+1. ✅ **Foundation** (done 2026-11-11): `plus_migrations` runner, tables, trigger, `subscription.repeated` hook.
    Verify every subscribe path produces the right events in the dev environment.
-2. **Engine**: worker (trigger + manual enrollment, sending, re-entry rules, "next now" link),
+2. ✅ **Engine** (done 2026-11-11, API reference: `002-sequences-api.md`): worker (trigger + manual enrollment, sending, re-entry rules, "next now" link),
    API only; tested with minute-scale delays + Mailhog.
 3. **Admin UI**: sequences list, editor, enroll dialog, activity, subscriber panel.
 4. **Hardening**: unsubscribe headers/links, retries, tests, docs; deploy to staging on the VPS.

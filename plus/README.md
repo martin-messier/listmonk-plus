@@ -5,7 +5,7 @@ sequences and, over time, a trigger engine.
 
 | Path | What |
 |---|---|
-| `plus/docs/` | Design documents (start with `001-sequences-design.md`) |
+| `plus/docs/` | Design (`001-sequences-design.md`) and API reference (`002-sequences-api.md`) |
 | `plus/UPSTREAM-TOUCHPOINTS.md` | Every change we make to upstream files + merge checklist |
 | `plus/scripts/` | Dev helpers and end-to-end tests |
 | `internal/plus/` | Go code and SQL (migrations, triggers) |
@@ -33,6 +33,9 @@ Logs: `docker compose -f dev/docker-compose.yml exec dev tail -f /tmp/listmonk-r
 ```bash
 docker compose -f dev/docker-compose.yml exec dev go test ./...
 LISTMONK_API_USER=... LISTMONK_API_TOKEN=... python3 -I plus/scripts/test-events.py
+
+PLUS_WORKER_INTERVAL=2s plus/scripts/dev-restart.sh   # fast worker for the engine test
+LISTMONK_API_USER=... LISTMONK_API_TOKEN=... python3 -I plus/scripts/test-sequences.py
 ```
 
 `test-events.py` needs an API user (Admin → Users → New → type "API", role Super Admin).
