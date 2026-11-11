@@ -80,12 +80,17 @@ type Step struct {
 	Position       int         `db:"position" json:"position"`
 	Delay          string      `db:"delay" json:"delay"`
 	DelaySeconds   int64       `db:"delay_seconds" json:"delay_seconds"`
-	TemplateID     int         `db:"template_id" json:"template_id"`
-	TemplateName   string      `db:"template_name" json:"template_name"`
-	Subject        null.String `db:"subject" json:"subject"`
 	SkipLandingURL null.String `db:"skip_landing_url" json:"skip_landing_url"`
-	CreatedAt      time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time   `db:"updated_at" json:"updated_at"`
+
+	// The step's message is a campaign (plus/docs/003).
+	CampaignID      int       `db:"campaign_id" json:"campaign_id"`
+	CampaignUUID    string    `db:"campaign_uuid" json:"campaign_uuid"`
+	CampaignName    string    `db:"campaign_name" json:"campaign_name"`
+	CampaignSubject string    `db:"campaign_subject" json:"campaign_subject"`
+	ContentType     string    `db:"content_type" json:"content_type"`
+	Sent            int       `db:"sent" json:"sent"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // Enrollment is one pass of a subscriber through a sequence.

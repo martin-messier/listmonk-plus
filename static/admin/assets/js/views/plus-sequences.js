@@ -26,8 +26,11 @@ function stepForm(step) {
     position: step ? step.position : undefined,
     delay_n: d.n,
     delay_unit: d.unit,
-    template_id: step ? step.template_id : '',
-    subject: step && step.subject ? step.subject : '',
+    campaign_id: step ? step.campaign_id : null,
+    campaign_name: step ? step.campaign_name : '',
+    campaign_subject: step ? step.campaign_subject : '',
+    sent: step ? step.sent : 0,
+    subject: '',
     skip_landing_url: step && step.skip_landing_url ? step.skip_landing_url : '',
   };
 }
@@ -35,8 +38,6 @@ function stepForm(step) {
 function stepPayload(f) {
   return {
     delay: `${Math.max(0, Math.floor(Number(f.delay_n) || 0))} ${f.delay_unit}`,
-    template_id: Number(f.template_id),
-    subject: f.subject || '',
     skip_landing_url: f.skip_landing_url || '',
   };
 }
@@ -73,7 +74,7 @@ function listView() {
 function editorView(seq, opts) {
   return {
     seq,
-    opts: opts || { lists: [], templates: [] },
+    opts: opts || { lists: [] },
     steps: seq ? seq.steps.map(stepForm) : [],
     newStep: stepForm(null),
     form: {
@@ -123,28 +124,16 @@ function editorView(seq, opts) {
       u.redirect(this.base, { message: `Deleted "${this.seq.name}"` });
     },
 
-    // Whether a template has a given flag (has_unsub / has_next).
-    tplHas(id, flag) {
-      const t = this.opts.templates.find((x) => x.id === Number(id));
-      return t ? t[flag] : true;
-    },
-
     async setStatus(status) {
-      if (status === 'active') {
-        const missing = this.steps.filter((st) => !this.tplHas(st.template_id, 'has_unsub')).map((st) => st.position);
-        if (missing.length > 0 && !(await u.confirm(
-          `Step${missing.length > 1 ? 's' : ''} ${missing.join(', ')} ${missing.length > 1 ? 'have' : 'has'} no unsubscribe link `
-          + '({{ SequenceUnsubscribeURL }}). Marketing emails should always include one. Activate anyway?'))) {
-          return;
-        }
-      }
       await api('plus.status', `/plus/sequences/${this.seq.id}`, 'PUT', { status });
       u.reload({ message: status === 'active' ? 'Sequence activated' : 'Sequence paused' });
     },
 
     // Steps.
     async addStep() {
-      await api('plus.step', `/plus/sequences/${this.seq.id}/steps`, 'POST', stepPayload(this.newStep));
+      const body = stepPayload(this.newStep);
+      if (this.newStep.subject) body.subject = this.newStep.subject;
+      await api('plus.step', `/plus/sequences/${this.seq.id}/steps`, 'POST', body);
       u.reload({ message: 'Step added' });
     },
 

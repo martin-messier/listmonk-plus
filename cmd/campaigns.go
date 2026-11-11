@@ -16,6 +16,7 @@ import (
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/internal/notifs"
+	"github.com/knadh/listmonk/internal/plus" // listmonk-plus
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
@@ -83,6 +84,9 @@ type campaignView struct {
 	SelectedListIDs []int
 	ArchiveURL      string
 	Analytics       *analyticsData
+
+	// listmonk-plus: set when the campaign is a sequence step's message.
+	PlusStep *plus.StepRef
 }
 
 // ViewNewCampaign renders the new campaign page (only the "campaign" tab).
@@ -192,6 +196,12 @@ func (a *App) ViewCampaign(c *echo.Context) error {
 		Templates:  tpls,
 		AllLists:   allLists,
 		ArchiveURL: archiveURL,
+	}
+
+	// listmonk-plus: sequence step messages are edited here but sent by the sequence.
+	if st, ok := a.plus.StepOf(camp.ID); ok {
+		data.PlusStep = &st
+		data.PageID = "sequences.all"
 	}
 
 	// Show the overview with stats/analytics for the last 90 days.
@@ -572,6 +582,13 @@ func (a *App) UpdateCampaign(c *echo.Context) error {
 	user := auth.GetUser(c)
 	o.ListIDs = user.FilterListsByPerm(auth.PermTypeManage, o.ListIDs)
 
+	// listmonk-plus: a sequence step's campaign always targets the sequence's
+	// list and is never scheduled (it's sent by the sequence worker).
+	if st, ok := a.plus.StepOf(id); ok {
+		o.ListIDs = []int{st.ListID}
+		o.SendAt.Valid = false
+	}
+
 	if c, err := a.validateCampaignFields(o); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	} else {
@@ -594,6 +611,11 @@ func (a *App) UpdateCampaignStatus(c *echo.Context) error {
 	// Check if the user has access to the campaign.
 	if err := a.checkCampaignPerm(auth.PermTypeManage, id, c); err != nil {
 		return err
+	}
+
+	// listmonk-plus: sequence step campaigns are never broadcast.
+	if st, ok := a.plus.StepOf(id); ok {
+		return st.StepGuardError("started, scheduled, paused or cancelled")
 	}
 
 	req := struct {
@@ -660,6 +682,11 @@ func (a *App) DeleteCampaign(c *echo.Context) error {
 	// Check if the user has access to the campaign.
 	if err := a.checkCampaignPerm(auth.PermTypeManage, id, c); err != nil {
 		return err
+	}
+
+	// listmonk-plus: step campaigns are deleted with their step, from the sequence.
+	if st, ok := a.plus.StepOf(id); ok {
+		return st.StepGuardError("deleted")
 	}
 
 	// Delete the campaign from the DB.

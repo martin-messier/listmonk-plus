@@ -70,6 +70,7 @@
 				<summary>{{ Icon "mail" }} Sequences</summary>
 				<ul>
 					<li><a href="{{ URI "/admin/plus/sequences" }}" {{ IsNav $p "sequences.all" }}>All sequences</a></li>
+					<li><a href="{{ URI "/admin/plus/sequences/analytics" }}" {{ IsNav $p "sequences.analytics" }}>{{ .L.T "globals.terms.analytics" }}</a></li>
 					{{- if Can $u "sequences:manage" }}
 					<li><a href="{{ URI "/admin/plus/sequences/new" }}" {{ IsNav $p "sequences.new" }}>{{ .L.T "globals.buttons.createNew" }}</a></li>
 					{{- end }}

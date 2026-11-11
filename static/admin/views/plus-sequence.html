@@ -63,8 +63,8 @@
 	.plus-delay { display: flex; gap: var(--space-2); }
 	.plus-delay input { max-width: 7rem; }
 	.plus-wait { text-align: center; color: var(--muted-foreground, inherit); opacity: .75; margin: calc(var(--space-2) * -1) 0 var(--space-3); font-size: .85em; }
-	.plus-warn { display: block; margin-top: var(--space-1); color: var(--tone-amber, #b45309); }
-	.plus-warn svg { vertical-align: -0.15em; }
+	.plus-step-msg { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+	                 padding: var(--space-3); margin-bottom: var(--space-4); border-radius: var(--radius-medium, 8px); background: var(--muted, rgba(0,0,0,.04)); }
 	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
 	.plus-stats a { text-decoration: none; }
 	.plus-enroll-result dl { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-3) 0 0; }
@@ -84,22 +84,14 @@
 {{- $canManage := $d.Can "sequences:manage" -}}
 <div class="page-content content">
 	<p class="text-light text-8">
-		Each step waits the given time <em>after the previous email was sent</em> (step 1: after the person enters the sequence), then sends a
-		<a href="{{ URI "/admin/templates" }}">transactional template</a>.
-		Two tags you can use in those templates:
+		Each step is a <strong>campaign message</strong>, edited on Listmonk's normal campaign screen (content, attachments, archive…),
+		but sent automatically to each person when they reach it. A step waits the given time <em>after the previous email was sent</em>
+		(step 1: after the person enters the sequence). Opens and clicks are tracked per step under <a href="{{ URI "/admin/plus/sequences/analytics" }}">Sequences → Analytics</a>.
 	</p>
 	<ul class="text-light text-8">
-		<li><strong>Unsubscribe link (required):</strong> <code>&lt;a href="{{ "{{ SequenceUnsubscribeURL }}" }}"&gt;Unsubscribe&lt;/a&gt;</code>
-			— unsubscribes the person from this sequence's list. (Listmonk's <code>{{ "{{ UnsubscribeURL }}" }}</code> only works in campaigns.)
-			One-click unsubscribe headers for Gmail/Yahoo are added automatically.</li>
-		<li><strong>"Send me the next email now" (optional):</strong> <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>.
-			Leave it out and the step just waits.</li>
+		<li><strong>Unsubscribe:</strong> Listmonk's <code>{{ "{{ UnsubscribeURL }}" }}</code> works as in any campaign (the default template already has it). It unsubscribes the person from this sequence's list.</li>
+		<li><strong>"Send me the next email now" (optional):</strong> <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>. Leave it out and the step just waits.</li>
 	</ul>
-
-	<template x-if="opts.templates.length === 0">
-		<p class="card">{{ Icon "alert-triangle" }} There are no transactional templates yet.
-			<a href="{{ URI "/admin/templates/new" }}">Create one</a> (type "Transactional") to use in steps.</p>
-	</template>
 
 	<template x-for="(step, i) in steps" :key="step.id">
 		<div>
@@ -115,6 +107,14 @@
 					</div>
 					{{- end }}
 				</div>
+				<div class="plus-step-msg">
+					<div>
+						<div class="text-light text-8">Message</div>
+						<strong x-text="step.campaign_subject"></strong>
+						<div class="text-light text-8"><span x-text="step.campaign_name"></span> · <span x-text="step.sent"></span> sent</div>
+					</div>
+					<a class="button outline small" :href="'{{ URI "/admin/campaigns" }}/' + step.campaign_id + '#tab=content'" data-testid="btn-edit-message">{{ Icon "edit-2" }} Edit message</a>
+				</div>
 				{{ template "plus-step-fields" dict "Root" . "Model" "step" }}
 				{{- if $canManage }}
 				<footer class="hstack justify-end mt-4">
@@ -126,7 +126,7 @@
 	</template>
 
 	<template x-if="steps.length === 0">
-		<div class="card empty-state">{{ Icon "mail" }}<p>No steps yet. Add the first email below.</p></div>
+		<div class="card empty-state">{{ Icon "mail" }}<p>No steps yet. Add the first message below.</p></div>
 	</template>
 
 	{{- if $canManage }}
@@ -134,12 +134,19 @@
 		<div class="plus-step-head">
 			<h3 class="m-0">{{ Icon "plus" }} Add step <span x-text="steps.length + 1"></span></h3>
 		</div>
+		<div class="plus-step-grid">
+			<label data-field>
+				Subject
+				<input type="text" maxlength="5000" x-model="newStep.subject" placeholder="{{ $s.Name }}" />
+				<small data-hint>You can change it, and everything else, on the message's campaign screen.</small>
+			</label>
+		</div>
 		{{ template "plus-step-fields" dict "Root" . "Model" "newStep" }}
 		<footer class="hstack justify-end mt-4">
-			<button type="submit" data-variant="primary" :disabled="isLoading('plus.step') || !newStep.template_id">{{ Icon "plus" }} Add step</button>
+			<button type="submit" data-variant="primary" :disabled="isLoading('plus.step')">{{ Icon "plus" }} Add step</button>
 		</footer>
 	</form>
-	{{- if $d.Sequence.Status | eq "active" }}
+	{{- if eq $s.Status "active" }}
 		<p class="text-light text-8">While the sequence is active, new steps are added at the end, and steps can't be reordered or deleted. Pause it to make those changes.</p>
 	{{- end }}
 	{{- end }}
@@ -162,22 +169,6 @@
 		</div>
 		<small data-hint>0 = send immediately.</small>
 	</div>
-	<div data-field>
-		<label>Email template</label>
-		<select required x-model.number="{{ $m }}.template_id">
-			<option value="">Choose a template…</option>
-			<template x-for="t in opts.templates" :key="t.id">
-				<option :value="t.id" x-text="t.name" :selected="t.id === {{ $m }}.template_id"></option>
-			</template>
-		</select>
-		<small data-hint><a :href="'{{ URI "/admin/templates" }}/' + {{ $m }}.template_id" x-show="{{ $m }}.template_id" target="_blank">Open template</a></small>
-		<small class="plus-warn" x-show="{{ $m }}.template_id && !tplHas({{ $m }}.template_id, 'has_unsub')" data-testid="warn-unsub">
-			{{ Icon "alert-triangle" }} This template has no <code>{{ "{{ SequenceUnsubscribeURL }}" }}</code> link.</small>
-	</div>
-	<label data-field>
-		Subject (optional)
-		<input type="text" maxlength="500" x-model="{{ $m }}.subject" placeholder="Use the template's subject" />
-	</label>
 	<label data-field>
 		"Next email now" landing page (optional)
 		<input type="url" maxlength="2000" x-model="{{ $m }}.skip_landing_url" placeholder="https://… (default: a confirmation page)" />
@@ -234,8 +225,9 @@
 			</div>
 
 			<label data-field>
-				From address (optional)
+				Default From address for new steps (optional)
 				<input type="text" maxlength="500" x-model="form.from_email" placeholder="Listmonk's default From address" />
+				<small data-hint>Each message's own From address is set on its campaign screen.</small>
 			</label>
 		</section>
 

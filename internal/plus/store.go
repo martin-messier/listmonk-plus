@@ -2,6 +2,7 @@ package plus
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
 	null "gopkg.in/volatiletech/null.v6"
@@ -26,10 +28,11 @@ FROM plus_sequences s JOIN lists l ON l.id = s.list_id`
 
 const stepSelect = `
 SELECT st.id, st.uuid, st.sequence_id, st.position, st.delay::TEXT AS delay,
-       EXTRACT(EPOCH FROM st.delay)::BIGINT AS delay_seconds,
-       st.template_id, t.name AS template_name, st.subject, st.skip_landing_url,
-       st.created_at, st.updated_at
-FROM plus_sequence_steps st JOIN templates t ON t.id = st.template_id`
+       EXTRACT(EPOCH FROM st.delay)::BIGINT AS delay_seconds, st.skip_landing_url,
+       st.created_at, st.updated_at,
+       c.id AS campaign_id, c.uuid AS campaign_uuid, c.name AS campaign_name,
+       c.subject AS campaign_subject, c.content_type, c.sent
+FROM plus_sequence_steps st JOIN campaigns c ON c.id = st.campaign_id`
 
 // errDryRun rolls back a preview transaction.
 var errDryRun = errors.New("dry run")
@@ -57,9 +60,12 @@ type seqInput struct {
 type stepInput struct {
 	Position       *int    `json:"position"`
 	Delay          *string `json:"delay"`
-	TemplateID     *int    `json:"template_id"`
-	Subject        *string `json:"subject"`
 	SkipLandingURL *string `json:"skip_landing_url"`
+
+	// Only used when adding a step: the new campaign's name and subject.
+	// Defaults: "<sequence> · Step N" and the sequence's name.
+	Name    *string `json:"name"`
+	Subject *string `json:"subject"`
 }
 
 func (p *Plus) getSequences() ([]Sequence, error) {
@@ -140,7 +146,8 @@ func (p *Plus) updateSequence(id int, in seqInput) (Sequence, error) {
 	if in.ListID != nil {
 		listID = *in.ListID
 	}
-	_, err = p.db.Exec(`
+	err = p.inTx(func(tx *sqlx.Tx) error {
+		_, err := tx.Exec(`
 		UPDATE plus_sequences SET
 		    name                 = COALESCE(NULLIF(TRIM($2), ''), name),
 		    status               = COALESCE($3, status),
@@ -151,8 +158,22 @@ func (p *Plus) updateSequence(id int, in seqInput) (Sequence, error) {
 		    from_email           = CASE WHEN $8::BOOL THEN NULLIF($9, '') ELSE from_email END,
 		    updated_at           = NOW()
 		WHERE id = $1`,
-		id, in.Name, in.Status, in.ListID, in.TriggerEnabled, in.ReentryAfterExit, in.ReentryWhileActive,
-		in.FromEmail != nil, null.StringFromPtr(in.FromEmail))
+			id, in.Name, in.Status, in.ListID, in.TriggerEnabled, in.ReentryAfterExit, in.ReentryWhileActive,
+			in.FromEmail != nil, null.StringFromPtr(in.FromEmail))
+		if err != nil || listID == cur.ListID {
+			return err
+		}
+		// Draft whose list changed: move its step campaigns to the new list.
+		if _, err := tx.Exec(`DELETE FROM campaign_lists WHERE campaign_id IN
+		                        (SELECT campaign_id FROM plus_sequence_steps WHERE sequence_id = $1)`, id); err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
+			INSERT INTO campaign_lists (campaign_id, list_id, list_name)
+			SELECT st.campaign_id, l.id, l.name FROM plus_sequence_steps st, lists l
+			WHERE st.sequence_id = $1 AND l.id = $2`, id, listID)
+		return err
+	})
 	if err != nil {
 		return cur, p.dbErr(err, listID)
 	}
@@ -170,8 +191,19 @@ func (p *Plus) deleteSequence(id int) error {
 	if cur.Status == SeqActive {
 		return errBad("pause the sequence before deleting it")
 	}
-	_, err = p.db.Exec(`DELETE FROM plus_sequences WHERE id = $1`, id)
-	return err
+	// Delete the sequence (steps, enrollments and sends cascade), then the
+	// steps' campaigns (they reference nothing back, so they'd be orphaned).
+	return p.inTx(func(tx *sqlx.Tx) error {
+		var campIDs []int64
+		if err := tx.Select(&campIDs, `SELECT campaign_id FROM plus_sequence_steps WHERE sequence_id = $1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM plus_sequences WHERE id = $1`, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM campaigns WHERE id = ANY($1::INT[])`, pq.Array(campIDs))
+		return err
+	})
 }
 
 func validateSeqInput(in seqInput) error {
@@ -216,9 +248,9 @@ func (p *Plus) dbErr(err error, listID int) error {
 
 // --- steps ---------------------------------------------------------------
 
-func (p *Plus) validateStep(in stepInput, requireAll bool) error {
-	if requireAll && (in.TemplateID == nil || in.Delay == nil) {
-		return errBad("delay and template_id are required")
+func (p *Plus) validateStep(in stepInput, requireDelay bool) error {
+	if requireDelay && in.Delay == nil {
+		return errBad("delay is required")
 	}
 	if in.Delay != nil {
 		var ok bool
@@ -227,15 +259,6 @@ func (p *Plus) validateStep(in stepInput, requireAll bool) error {
 		}
 		if !ok {
 			return errBad("delay can't be negative")
-		}
-	}
-	if in.TemplateID != nil {
-		var typ string
-		if err := p.db.Get(&typ, `SELECT type FROM templates WHERE id = $1`, *in.TemplateID); err != nil {
-			return errBad("template %d not found", *in.TemplateID)
-		}
-		if typ != "tx" {
-			return errBad("template %d is a %q template; sequence steps use transactional (tx) templates", *in.TemplateID, typ)
 		}
 	}
 	if in.SkipLandingURL != nil && *in.SkipLandingURL != "" {
@@ -247,6 +270,12 @@ func (p *Plus) validateStep(in stepInput, requireAll bool) error {
 	return nil
 }
 
+const newStepBody = `<p>Hi {{ .Subscriber.FirstName }},</p>
+<p>Write this step's message here.</p>
+<p>Can't wait for the next one? <a href="{{ SequenceNextURL }}">Send me the next email now</a>.</p>`
+
+// addStep creates the step's campaign (a draft on the sequence's list, with
+// Listmonk's default template) and the step itself.
 func (p *Plus) addStep(seqID int, in stepInput) (Sequence, error) {
 	seq, err := p.getSequence(seqID)
 	if err != nil {
@@ -266,6 +295,36 @@ func (p *Plus) addStep(seqID int, in stepInput) (Sequence, error) {
 		pos = *in.Position
 	}
 
+	name := fmt.Sprintf("%s · Step %d", seq.Name, pos)
+	if in.Name != nil && strings.TrimSpace(*in.Name) != "" {
+		name = strings.TrimSpace(*in.Name)
+	}
+	subject := seq.Name
+	if in.Subject != nil && strings.TrimSpace(*in.Subject) != "" {
+		subject = strings.TrimSpace(*in.Subject)
+	}
+	from := seq.FromEmail.String
+	if from == "" {
+		from = p.opt.FromEmail
+	}
+
+	camp, err := p.opt.Core.CreateCampaign(models.Campaign{
+		Type:        models.CampaignTypeRegular,
+		Name:        name,
+		Subject:     subject,
+		FromEmail:   from,
+		Body:        newStepBody,
+		ContentType: models.CampaignContentTypeRichtext,
+		Messenger:   "email",
+		Headers:     models.Headers{},
+		Attribs:     models.JSON{},
+		Tags:        pq.StringArray{},
+		ArchiveMeta: json.RawMessage(`{}`),
+	}, []int{seq.ListID}, nil)
+	if err != nil {
+		return seq, err
+	}
+
 	err = p.inTx(func(tx *sqlx.Tx) error {
 		if _, err := tx.Exec(`SET CONSTRAINTS ALL DEFERRED`); err != nil {
 			return err
@@ -275,13 +334,16 @@ func (p *Plus) addStep(seqID int, in stepInput) (Sequence, error) {
 			return err
 		}
 		_, err := tx.Exec(`
-			INSERT INTO plus_sequence_steps (sequence_id, position, delay, template_id, subject, skip_landing_url)
-			VALUES ($1, $2, $3::INTERVAL, $4, NULLIF($5, ''), NULLIF($6, ''))`,
-			seqID, pos, strings.TrimSpace(*in.Delay), *in.TemplateID,
-			null.StringFromPtr(in.Subject), null.StringFromPtr(in.SkipLandingURL))
+			INSERT INTO plus_sequence_steps (sequence_id, position, delay, campaign_id, skip_landing_url)
+			VALUES ($1, $2, $3::INTERVAL, $4, NULLIF($5, ''))`,
+			seqID, pos, strings.TrimSpace(*in.Delay), camp.ID, null.StringFromPtr(in.SkipLandingURL))
 		return err
 	})
 	if err != nil {
+		// Don't leave an orphan campaign behind.
+		if _, derr := p.db.Exec(`DELETE FROM campaigns WHERE id = $1`, camp.ID); derr != nil {
+			p.log.Printf("listmonk-plus: error removing campaign %d after failed step insert: %v", camp.ID, derr)
+		}
 		return seq, p.dbErr(err, seq.ListID)
 	}
 	return p.getSequence(seqID)
@@ -331,13 +393,10 @@ func (p *Plus) updateStep(seqID, stepID int, in stepInput) (Sequence, error) {
 		_, err := tx.Exec(`
 			UPDATE plus_sequence_steps SET
 			    delay            = COALESCE($2::INTERVAL, delay),
-			    template_id      = COALESCE($3, template_id),
-			    subject          = CASE WHEN $4::BOOL THEN NULLIF($5, '') ELSE subject END,
-			    skip_landing_url = CASE WHEN $6::BOOL THEN NULLIF($7, '') ELSE skip_landing_url END,
+			    skip_landing_url = CASE WHEN $3::BOOL THEN NULLIF($4, '') ELSE skip_landing_url END,
 			    updated_at       = NOW()
 			WHERE id = $1`,
-			stepID, null.StringFromPtr(trimPtr(in.Delay)), in.TemplateID,
-			in.Subject != nil, null.StringFromPtr(in.Subject),
+			stepID, null.StringFromPtr(trimPtr(in.Delay)),
 			in.SkipLandingURL != nil, null.StringFromPtr(in.SkipLandingURL))
 		return err
 	})
@@ -347,6 +406,7 @@ func (p *Plus) updateStep(seqID, stepID int, in stepInput) (Sequence, error) {
 	return p.getSequence(seqID)
 }
 
+// deleteStep deletes a step and its campaign (with its stats).
 func (p *Plus) deleteStep(seqID, stepID int) (Sequence, error) {
 	seq, err := p.getSequence(seqID)
 	if err != nil {
@@ -356,19 +416,25 @@ func (p *Plus) deleteStep(seqID, stepID int) (Sequence, error) {
 		return seq, errBad("pause the sequence before deleting steps")
 	}
 	err = p.inTx(func(tx *sqlx.Tx) error {
-		var pos int
-		if err := tx.Get(&pos, `DELETE FROM plus_sequence_steps WHERE id = $1 AND sequence_id = $2 RETURNING position`,
+		var st struct {
+			Position   int `db:"position"`
+			CampaignID int `db:"campaign_id"`
+		}
+		if err := tx.Get(&st, `DELETE FROM plus_sequence_steps WHERE id = $1 AND sequence_id = $2 RETURNING position, campaign_id`,
 			stepID, seqID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return errNotFound("step")
 			}
 			return err
 		}
+		if _, err := tx.Exec(`DELETE FROM campaigns WHERE id = $1`, st.CampaignID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`SET CONSTRAINTS ALL DEFERRED`); err != nil {
 			return err
 		}
 		_, err := tx.Exec(`UPDATE plus_sequence_steps SET position = position - 1, updated_at = NOW()
-		                   WHERE sequence_id = $1 AND position > $2`, seqID, pos)
+		                   WHERE sequence_id = $1 AND position > $2`, seqID, st.Position)
 		return err
 	})
 	if err != nil {

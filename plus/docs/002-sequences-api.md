@@ -23,18 +23,28 @@ only change while `draft`. A list can have only one `active`/`paused` sequence w
 
 ## Steps
 
+Each step owns a **campaign** (its message), created with the step and deleted with it. Edit the
+message with Listmonk's campaign API/screen (`/api/campaigns/:campaign_id`); the step API only
+handles timing and order.
+
 | Method | Path | Body / notes |
 |---|---|---|
-| POST | `/api/plus/sequences/:id/steps` | `{template_id, delay, subject?, skip_landing_url?, position?}`. While `active`: append only. |
-| PUT | `/api/plus/sequences/:id/steps/:stepID` | Any field; `position` (reorder) only while not `active`. |
-| DELETE | `/api/plus/sequences/:id/steps/:stepID` | Only while not `active`; later steps move up. |
+| POST | `/api/plus/sequences/:id/steps` | `{delay, subject?, name?, skip_landing_url?, position?}`. Creates a draft campaign on the sequence's list with Listmonk's default template (`subject` defaults to the sequence name, `name` to "<sequence> · Step N"). While `active`: append only. |
+| PUT | `/api/plus/sequences/:id/steps/:stepID` | `delay`, `skip_landing_url`, `position` (reorder only while not `active`). |
+| DELETE | `/api/plus/sequences/:id/steps/:stepID` | Only while not `active`; deletes the step's campaign (and its stats); later steps move up. |
 
-- `template_id`: a **transactional (tx)** template.
 - `delay`: wait after the previous step (step 1: after enrollment). Postgres interval text:
   `"0"`, `"10 minutes"`, `"2 hours"`, `"3 days"`, `"1 day 12 hours"`. Returned as `delay` and `delay_seconds`.
-- `subject`: overrides the template's subject (may use template expressions).
+- Step responses include `campaign_id`, `campaign_uuid`, `campaign_name`, `campaign_subject`, `content_type`, `sent`.
 - `skip_landing_url`: where people land after pressing "send me the next email now" in **this
   step's** email. Empty = a built-in confirmation page.
+
+### Step campaigns in Listmonk's campaign API
+
+`PUT /api/campaigns/:id` works (content, subject, from, template, headers, attachments, archive…),
+but the lists are always forced to the sequence's list and `send_at` is ignored.
+`PUT /api/campaigns/:id/status` and `DELETE /api/campaigns/:id` return **400** for step campaigns.
+Step campaigns are excluded from `GET /api/campaigns` and from Campaigns → Analytics.
 
 ## Enrollments
 
@@ -49,22 +59,17 @@ Enroll response: `{enrolled, restarted, skipped: {reason: count}}`. Skip reasons
 `subscriber_blocklisted`, `already_active`, `already_completed_or_left`, `in_other_sequence`. Needs the sequence to be
 `active` or `paused`.
 
-## Template functions
+## Template tags (in a step's campaign)
 
-In any tx template used by a step:
+All of Listmonk's campaign tags work as in any campaign: `{{ UnsubscribeURL }}` (unsubscribes from the
+sequence's list — the campaign's list), `{{ TrackView }}`, `@TrackLink`, `{{ MessageURL }}`, … Plus:
 
 ```html
-<!-- Required: unsubscribes the person from the sequence's list -->
-<a href="{{ SequenceUnsubscribeURL }}">Unsubscribe</a>
-
-<!-- Optional: skip the current wait -->
-<a href="{{ SequenceNextURL }}">Can't wait? Get the next email now</a>
+<a href="{{ SequenceNextURL }}">Can't wait? Get the next email now</a>   <!-- optional -->
 ```
 
-Outside a sequence (normal tx sends, previews) both render as an empty string. Listmonk's own
-`{{ UnsubscribeURL }}` only exists in campaign templates; the separate name guarantees the two
-never interfere. Every sequence email also gets `List-Unsubscribe` and
-`List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers (RFC 8058) pointing to the same URL.
+It renders `/plus/seq/next/<campaign uuid>/<subscriber uuid>` in every campaign; outside a sequence the
+page simply says the link doesn't apply.
 
 ## Public pages
 
@@ -72,8 +77,13 @@ GET never changes anything (email scanners pre-fetch links); it shows a confirma
 
 | Path | GET | POST |
 |---|---|---|
-| `/plus/seq/next/:sendUUID` | Confirmation button | Skips the current wait |
-| `/plus/seq/unsubscribe/:sendUUID` | Confirmation button | Unsubscribes from the sequence's list (also the one-click request mail providers send, no confirmation) |
+| `/plus/seq/next/:campaignUUID/:subscriberUUID` | Confirmation button | Skips the current wait |
+
+## Analytics page
+
+`/admin/plus/sequences/analytics?id=&from=YYYY-MM-DD&to=YYYY-MM-DD` (default: last 30 days):
+per sequence (entered, completed, stopped, in progress) and per step (sent, opens, clicks, bounces,
+unsubscribes). Opens/clicks are Listmonk's campaign tracking of each step's campaign.
 
 ## Worker
 

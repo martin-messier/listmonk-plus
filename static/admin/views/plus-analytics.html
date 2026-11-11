@@ -1,0 +1,95 @@
+{{- /* listmonk-plus: per-sequence and per-step analytics. */ -}}
+{{ define "plus-analytics" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $base := URI "/admin/plus/sequences" -}}
+
+<section class="plus-analytics">
+	<header class="hstack justify-between page-header">
+		<div class="hstack page-heading">
+			<h1 class="page-title">Sequence analytics</h1>
+		</div>
+		<form method="get" action="{{ $base }}/analytics" class="hstack gap-2 plus-filter" data-testid="analytics-filter">
+			<select name="id" aria-label="Sequence">
+				<option value="0">All sequences</option>
+				{{- range $d.Sequences }}<option value="{{ .ID }}" {{ if eq .ID $d.SeqID }}selected{{ end }}>{{ .Name }}</option>{{ end }}
+			</select>
+			<input type="date" name="from" value="{{ $d.From }}" aria-label="From" />
+			<input type="date" name="to" value="{{ $d.To }}" aria-label="To" />
+			<button type="submit" class="outline">{{ Icon "refresh-cw" }} Apply</button>
+		</form>
+	</header>
+
+	<p class="text-light text-8">
+		{{ $d.From }} to {{ $d.To }}. Opens and clicks are Listmonk's own campaign tracking of each step's message
+		(opens need the message to include <code>{{ "{{ TrackView }}" }}</code>, which the default template does). With individual tracking
+		on (Settings → Privacy) you also see how many <em>people</em> opened or clicked, and rates use those; otherwise rates use total
+		opens/clicks. Rates are relative to the emails sent in the period.
+	</p>
+
+	{{- range $d.Stats }}
+	{{- $seq := . }}
+	<div class="card page-content plus-an-seq" data-testid="analytics-seq">
+		<div class="hstack justify-between plus-an-head">
+			<div>
+				<h2 class="m-0"><a href="{{ $base }}/{{ .ID }}" class="unstyled">{{ .Name }}</a></h2>
+				<div class="text-light text-8">List: {{ .ListName }}</div>
+			</div>
+			{{ template "plus-seq-status" .Status }}
+		</div>
+		<div class="plus-an-totals">
+			<div><strong>{{ FormatNumber .Entered }}</strong><span>entered</span></div>
+			<div><strong>{{ FormatNumber .Completed }}</strong><span>completed</span></div>
+			<div><strong>{{ FormatNumber .Stopped }}</strong><span>stopped</span></div>
+			<div><strong>{{ FormatNumber .Active }}</strong><span>in progress now</span></div>
+		</div>
+		<div class="table-wrapper">
+			<table>
+				<thead>
+					<tr>
+						<th>Step</th>
+						<th>Sent</th>
+						<th>Opens</th>
+						<th>Clicks</th>
+						<th>Bounces</th>
+						<th>Unsubscribed</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{- range .Steps }}
+					<tr data-testid="analytics-step">
+						<td>
+							<strong>{{ .Position }}.</strong> <a href="{{ URI "/admin/campaigns" }}/{{ .CampaignID }}">{{ .CampaignSubject }}</a>
+						</td>
+						<td>{{ FormatNumber .Sent }}</td>
+						<td>{{ FormatNumber .Opens }} <span class="text-light text-8">{{ .OpenRate }}</span>
+							{{- if gt .UniqueOpens 0 }}<div class="text-light text-8">{{ FormatNumber .UniqueOpens }} people</div>{{ end }}</td>
+						<td>{{ FormatNumber .Clicks }} <span class="text-light text-8">{{ .ClickRate }}</span>
+							{{- if gt .UniqueClicks 0 }}<div class="text-light text-8">{{ FormatNumber .UniqueClicks }} people</div>{{ end }}</td>
+						<td>{{ FormatNumber .Bounces }} <span class="text-light text-8">{{ .Pct .Bounces }}</span></td>
+						<td>{{ FormatNumber .Unsubscribes }} <span class="text-light text-8">{{ .Pct .Unsubscribes }}</span></td>
+					</tr>
+					{{- else }}
+					<tr><td colspan="6" class="text-light">No steps.</td></tr>
+					{{- end }}
+				</tbody>
+			</table>
+		</div>
+	</div>
+	{{- else }}
+		<div class="card empty-state">{{ Icon "bar-chart-2" }}<p>No sequences yet.</p></div>
+	{{- end }}
+</section>
+
+<style>
+	.plus-filter select, .plus-filter input { width: auto; }
+	.plus-an-seq { margin-bottom: var(--space-6); }
+	.plus-an-head { margin-bottom: var(--space-4); align-items: flex-start; }
+	.plus-an-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+	.plus-an-totals div { display: flex; flex-direction: column; }
+	.plus-an-totals strong { font-size: 1.4rem; }
+	.plus-an-totals span { font-size: .85em; opacity: .7; }
+	@media (max-width: 720px) { .plus-sequence .page-header, .plus-analytics .page-header { flex-wrap: wrap; } .plus-filter { flex-wrap: wrap; } }
+</style>
+{{ template "admin-footer" . -}}
+{{ end }}

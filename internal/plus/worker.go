@@ -184,16 +184,14 @@ func triggerMatches(optin string, e event) bool {
 
 // dueRow is an enrollment whose next step is due.
 type dueRow struct {
-	EnrollmentID int64       `db:"enrollment_id"`
-	SequenceID   int         `db:"sequence_id"`
-	SubscriberID int         `db:"subscriber_id"`
-	NextStep     int         `db:"next_step"`
-	ListID       int         `db:"list_id"`
-	ListOptin    string      `db:"list_optin"`
-	FromEmail    null.String `db:"from_email"`
-	StepID       null.Int    `db:"step_id"`
-	TemplateID   null.Int    `db:"template_id"`
-	Subject      null.String `db:"subject"`
+	EnrollmentID int64    `db:"enrollment_id"`
+	SequenceID   int      `db:"sequence_id"`
+	SubscriberID int      `db:"subscriber_id"`
+	NextStep     int      `db:"next_step"`
+	ListID       int      `db:"list_id"`
+	ListOptin    string   `db:"list_optin"`
+	StepID       null.Int `db:"step_id"`
+	CampaignID   null.Int `db:"campaign_id"`
 }
 
 // processDue claims a batch of due enrollments and sends their next step
@@ -210,8 +208,8 @@ func (p *Plus) processDue(ctx context.Context) (int, error) {
 	var rows []dueRow
 	if err := tx.Select(&rows, `
 		SELECT e.id AS enrollment_id, e.sequence_id, e.subscriber_id, e.next_step,
-		       s.list_id, l.optin AS list_optin, s.from_email,
-		       st.id AS step_id, st.template_id, st.subject
+		       s.list_id, l.optin AS list_optin,
+		       st.id AS step_id, st.campaign_id
 		FROM plus_enrollments e
 		JOIN plus_sequences s ON s.id = e.sequence_id AND s.status = 'active'
 		JOIN lists l ON l.id = s.list_id
@@ -237,13 +235,14 @@ func (p *Plus) processDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
+	cache := campaignCache{}
 	for _, r := range rows {
 		if ctx.Err() != nil {
 			// Shutting down: release the remaining claims so they go out right after restart.
 			p.releaseClaim(r.EnrollmentID)
 			continue
 		}
-		if err := p.handleDue(r); err != nil {
+		if err := p.handleDue(r, cache); err != nil {
 			p.log.Printf("listmonk-plus: enrollment %d step %d: %v", r.EnrollmentID, r.NextStep, err)
 		}
 	}
@@ -257,7 +256,7 @@ func (p *Plus) releaseClaim(enrollmentID int64) {
 	}
 }
 
-func (p *Plus) handleDue(r dueRow) error {
+func (p *Plus) handleDue(r dueRow, cache campaignCache) error {
 	// No step at this position (steps were removed): the pass is complete.
 	if !r.StepID.Valid {
 		return p.advance(r.EnrollmentID, r.SequenceID, r.NextStep)
@@ -325,11 +324,7 @@ func (p *Plus) handleDue(r dueRow) error {
 		return err
 	}
 
-	from := r.FromEmail.String
-	if from == "" {
-		from = p.opt.FromEmail
-	}
-	sendErr := p.sendStep(r.SubscriberID, int(r.TemplateID.Int), r.Subject, from, sd.UUID)
+	sendErr := p.sendCampaign(cache, int(r.CampaignID.Int), r.SubscriberID)
 	if sendErr == nil {
 		if _, err := p.db.Exec(`UPDATE plus_sends SET status = 'queued', error = NULL, updated_at = NOW() WHERE id = $1`, sd.ID); err != nil {
 			return err

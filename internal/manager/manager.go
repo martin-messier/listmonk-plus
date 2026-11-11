@@ -22,7 +22,6 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/notifs"
-	"github.com/knadh/listmonk/internal/plus/tplfuncs" // listmonk-plus
 	"github.com/knadh/listmonk/models"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -426,6 +425,11 @@ func (m *Manager) TemplateFuncs(c *models.Campaign, opts ...models.CampOpt) temp
 		"RootURL": func() string {
 			return m.cfg.RootURL
 		},
+		// listmonk-plus: "send me the next email now" link in sequence messages.
+		// Renders a link for any campaign; the page explains when it doesn't apply.
+		"SequenceNextURL": func(msg *CampaignMessage) string {
+			return m.cfg.RootURL + "/plus/seq/next/" + msg.Campaign.UUID + "/" + msg.Subscriber.UUID
+		},
 	}
 
 	maps.Copy(f, m.GenericTemplateFuncs(opts...))
@@ -704,9 +708,6 @@ func (m *Manager) makeGnericFuncMap() template.FuncMap {
 	delete(sprigFuncs, "getHostByName")
 
 	maps.Copy(funcs, sprigFuncs)
-
-	// listmonk-plus: placeholders for sequence template functions (e.g. SequenceNextURL).
-	maps.Copy(funcs, tplfuncs.Placeholders())
 
 	return funcs
 }

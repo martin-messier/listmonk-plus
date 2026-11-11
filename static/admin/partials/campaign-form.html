@@ -27,7 +27,8 @@
 
 			<fieldset class="card">
 				<legend>{{ $root.L.T "globals.terms.lists" }}</legend>
-				{{ template "list-selector" dict "Root" $root "Model" "form.lists" "ListID" "campaign-lists" "Placeholder" "campaigns.sendToLists" "Disabled" "!canEdit" }}
+				{{ template "list-selector" dict "Root" $root "Model" "form.lists" "ListID" "campaign-lists" "Placeholder" "campaigns.sendToLists" "Disabled" (ternary "true" "!canEdit" (not (not $root.Data.PlusStep))) }}
+				{{- /* listmonk-plus */}}{{ if $root.Data.PlusStep }}<small data-hint>A sequence step is always sent to the sequence's list.</small>{{ end }}
 			</fieldset>
 
 			<fieldset class="card">
@@ -59,6 +60,8 @@
 				</label>
 			</fieldset>
 
+			{{- /* listmonk-plus: sequence steps are timed by their sequence, not scheduled. */}}
+			{{- if not $root.Data.PlusStep }}
 			<fieldset class="card">
 				<legend>{{ $root.L.T "campaigns.schedule" }}</legend>
 				<div class="row">
@@ -82,6 +85,7 @@
 					{{- end }}
 				</div>
 			</fieldset>
+			{{- end }}
 
 			<fieldset class="card">
 				<legend>{{ $root.L.T "globals.fields.customHeaders" }}</legend>

@@ -64,7 +64,7 @@ type nextPage struct {
 
 // nextState is what a "next now" link points at.
 type nextState struct {
-	SendID         int64       `db:"send_id"`
+	SendID         null.Int    `db:"send_id"`
 	EnrollmentID   int64       `db:"enrollment_id"`
 	EnrStatus      string      `db:"enr_status"`
 	NextStep       int         `db:"next_step"`
@@ -78,15 +78,15 @@ type nextState struct {
 
 // RegisterPublic registers the public (unauthenticated) routes.
 func (p *Plus) RegisterPublic(g *echo.Group) {
-	g.GET("/plus/seq/next/:uuid", p.handleNextPage)
-	g.POST("/plus/seq/next/:uuid", p.handleNextSubmit)
-	g.GET("/plus/seq/unsubscribe/:uuid", p.handleUnsubPage)
-	g.POST("/plus/seq/unsubscribe/:uuid", p.handleUnsubSubmit)
+	g.GET("/plus/seq/next/:campUUID/:subUUID", p.handleNextPage)
+	g.POST("/plus/seq/next/:campUUID/:subUUID", p.handleNextSubmit)
 }
 
-func (p *Plus) loadNextState(uuid string) (nextState, string, error) {
+// loadNextState finds what a "next now" link points at: the subscriber's most
+// recent pass through the sequence that owns the campaign the email came from.
+func (p *Plus) loadNextState(campUUID, subUUID string) (nextState, string, error) {
 	var s nextState
-	if !reUUID.MatchString(uuid) {
+	if !reUUID.MatchString(campUUID) || !reUUID.MatchString(subUUID) {
 		return s, "invalid", nil
 	}
 	err := p.db.Get(&s, `
@@ -94,12 +94,15 @@ func (p *Plus) loadNextState(uuid string) (nextState, string, error) {
 		       sq.status AS seq_status, st.position, st.skip_landing_url,
 		       (SELECT COUNT(*) FROM plus_sequence_steps WHERE sequence_id = e.sequence_id) AS total_steps,
 		       e.subscriber_id, e.sequence_id
-		FROM plus_sends sd
-		JOIN plus_enrollments e ON e.id = sd.enrollment_id
-		JOIN plus_sequences sq ON sq.id = e.sequence_id
-		LEFT JOIN plus_sequence_steps st ON st.id = sd.step_id
-		WHERE sd.uuid = $1`, uuid)
+		FROM plus_sequence_steps st
+		JOIN campaigns c ON c.id = st.campaign_id AND c.uuid = $1::UUID
+		JOIN plus_sequences sq ON sq.id = st.sequence_id
+		JOIN subscribers sub ON sub.uuid = $2::UUID
+		JOIN plus_enrollments e ON e.sequence_id = st.sequence_id AND e.subscriber_id = sub.id
+		LEFT JOIN plus_sends sd ON sd.enrollment_id = e.id AND sd.step_id = st.id
+		ORDER BY e.id DESC LIMIT 1`, campUUID, subUUID)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Not a sequence message, or this person was never in the sequence.
 		return s, "invalid", nil
 	}
 	if err != nil {
@@ -107,20 +110,20 @@ func (p *Plus) loadNextState(uuid string) (nextState, string, error) {
 	}
 
 	switch {
-	case !s.Position.Valid:
-		return s, "inactive", nil // the step was deleted
 	case int(s.Position.Int) >= s.TotalSteps:
 		return s, "last", nil
 	case s.EnrStatus != EnrActive || s.SeqStatus != SeqActive:
 		return s, "inactive", nil
 	case int(s.Position.Int) < s.NextStep-1:
 		return s, "already", nil // a later email has been sent since
+	case int(s.Position.Int) > s.NextStep-1:
+		return s, "invalid", nil // this step hasn't been sent in the current pass
 	}
 	return s, "ready", nil
 }
 
 func (p *Plus) handleNextPage(c *echo.Context) error {
-	_, state, err := p.loadNextState(c.Param("uuid"))
+	_, state, err := p.loadNextState(c.Param("campUUID"), c.Param("subUUID"))
 	if err != nil {
 		p.log.Printf("listmonk-plus: next-now lookup: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "error")
@@ -133,7 +136,7 @@ func (p *Plus) handleNextPage(c *echo.Context) error {
 }
 
 func (p *Plus) handleNextSubmit(c *echo.Context) error {
-	s, state, err := p.loadNextState(c.Param("uuid"))
+	s, state, err := p.loadNextState(c.Param("campUUID"), c.Param("subUUID"))
 	if err != nil {
 		p.log.Printf("listmonk-plus: next-now lookup: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "error")

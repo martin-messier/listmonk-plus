@@ -9,6 +9,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/knadh/listmonk/internal/plus"
 	"github.com/labstack/echo/v5"
@@ -44,6 +45,7 @@ func (a *App) registerPlusViews(g *echo.Group, pm func(echo.HandlerFunc, ...stri
 	base := path.Join(uriAdmin, "/plus/sequences")
 
 	g.GET(base, a.adminPage(pm(a.ViewPlusSequences, get)))
+	g.GET(base+"/analytics", a.adminPage(pm(a.ViewPlusAnalytics, get)))
 	g.GET(base+"/new", a.adminPage(pm(a.ViewPlusNewSequence, manage)))
 	g.GET(base+"/:id", a.adminPage(pm(a.ViewPlusSequence, get)))
 	g.GET(base+"/:id/settings", a.adminPage(pm(a.ViewPlusSequence, get)))
@@ -59,6 +61,46 @@ func (a *App) ViewPlusSequences(c *echo.Context) error {
 	return c.Render(http.StatusOK, "plus-sequences", plusSequencesView{
 		adminView: newAdminView(c, "Sequences", "", "sequences.all"),
 		Sequences: seqs,
+	})
+}
+
+type plusAnalyticsView struct {
+	adminView
+	From, To  string
+	SeqID     int
+	Sequences []plus.Sequence
+	Stats     []plus.SequenceStats
+}
+
+// ViewPlusAnalytics renders per-sequence and per-step numbers over a date range
+// (default: the last 30 days).
+func (a *App) ViewPlusAnalytics(c *echo.Context) error {
+	const layout = "2006-01-02"
+	to, err := time.Parse(layout, c.QueryParam("to"))
+	if err != nil {
+		to = time.Now().UTC()
+	}
+	from, err := time.Parse(layout, c.QueryParam("from"))
+	if err != nil || from.After(to) {
+		from = to.AddDate(0, 0, -30)
+	}
+	seqID, _ := strconv.Atoi(c.QueryParam("id"))
+
+	stats, err := a.plus.Analytics(from.Truncate(24*time.Hour), to.Truncate(24*time.Hour).Add(24*time.Hour-time.Nanosecond), seqID)
+	if err != nil {
+		return err
+	}
+	seqs, err := a.plus.Sequences()
+	if err != nil {
+		return err
+	}
+	return c.Render(http.StatusOK, "plus-analytics", plusAnalyticsView{
+		adminView: newAdminView(c, "Analytics / Sequences", "", "sequences.analytics"),
+		From:      from.Format(layout),
+		To:        to.Format(layout),
+		SeqID:     seqID,
+		Sequences: seqs,
+		Stats:     stats,
 	})
 }
 

@@ -256,7 +256,7 @@ Permissions (added to `permissions.json`): `sequences:get`, `sequences:manage`.
 
 | # | Decision |
 |---|---|
-| D1 | Steps use Listmonk transactional (tx) templates. Dedicated editor later. |
+| D1 | ~~Steps use Listmonk transactional (tx) templates.~~ **Superseded (M5):** each step is a campaign edited on the native campaign screen — see `003-sequence-messages-design.md`. |
 | D2 | Subscription is one trigger; existing members can be enrolled manually (bulk or individually). |
 | D3 | Per-sequence re-entry rules: after leaving (ignore/restart) and while active (continue/restart). |
 | D4 | Send as soon as due. Delays in minutes/hours/days. "Next email now" link to skip the wait. |
@@ -279,6 +279,8 @@ Permissions (added to `permissions.json`): `sequences:get`, `sequences:manage`.
    search, translations (pages are English-only).
 4. **Hardening**: ✅ unsubscribe link + one-click headers, editor warning + activation check,
    retries (M2), tests (44 engine + 15 event checks), docs (done 2026-11-11). ⏳ Deploy to staging on the VPS.
+5. ✅ **Steps are campaigns** (M5, `003-sequence-messages-design.md`): native campaign screen per step,
+   opens/clicks per step, Sequences → Analytics, safeguards against broadcasting a step.
 
 ## 13. Toward the trigger engine (later)
 
