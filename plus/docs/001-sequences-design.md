@@ -27,7 +27,7 @@ to a list** (the trigger) or **manually** (bulk-enroll existing list members, or
 
 ## 2. Fork principles (to keep upstream merges painless)
 
-1. **New code lives in new places**: Go in `internal/plus/…`, SQL in `queries/plus/…`,
+1. **New code lives in new places**: Go and SQL (embedded) in `internal/plus/…`,
    templates in `static/admin/views/plus-*.html`, docs in `plus/docs/`.
 2. **New tables are prefixed `plus_`.** We never alter upstream tables.
 3. **Own migration track.** Upstream records migrations by Listmonk version (`v7.0.0`…) in
@@ -66,9 +66,12 @@ When an already-subscribed person submits the signup form again, the status does
 the trigger above sees nothing. We can't detect it from the table either: Listmonk rewrites the
 same rows when an admin simply saves a subscriber's edit form, so the two are indistinguishable
 in the database. Therefore a **small hook in the public subscription handler**
-(`cmd/public.go` → `SubscriptionForm`) and in the API create path emits
-`subscription.repeated` when the person was already actively subscribed to the list.
-(CSV import and admin edits deliberately do *not* emit it.)
+(`cmd/public.go` → `processSubForm`, shared by `/subscription/form` and
+`/api/public/subscription`) emits `subscription.repeated` when the person was already actively
+subscribed to the list. The admin API's "create subscriber" rejects existing emails, so it
+needs no hook. CSV import and admin edits deliberately do *not* emit it.
+
+*Implemented in M1; verified by `plus/scripts/test-events.py`.*
 
 `plus_events` is generic (type + subscriber + list + JSON payload). It is the foundation of the
 future trigger engine: every future trigger is just another event type.

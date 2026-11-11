@@ -26,6 +26,7 @@ import (
 	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/internal/media"
 	"github.com/knadh/listmonk/internal/messenger/email"
+	"github.com/knadh/listmonk/internal/plus" // listmonk-plus
 	"github.com/knadh/listmonk/internal/subimporter"
 	"github.com/knadh/listmonk/models"
 	"github.com/knadh/paginator/v2"
@@ -53,6 +54,7 @@ type App struct {
 	events     *events.Events
 	log        *log.Logger
 	bufLog     *buflog.BufLog
+	plus       *plus.Plus // listmonk-plus
 
 	about         about
 	fnOptinNotify func(models.Subscriber, []int) (int, error)
@@ -187,6 +189,11 @@ func init() {
 		checkUpgrade(db)
 	}
 
+	// listmonk-plus: apply our own migrations and (re)install our triggers.
+	if err := plus.Migrate(db, lo); err != nil {
+		lo.Fatalf("listmonk-plus: %v", err)
+	}
+
 	// Read the SQL queries from the queries file.
 	qMap := readQueries(queryFilePath, fs)
 
@@ -291,6 +298,7 @@ func main() {
 		log:        lo,
 		events:     evStream,
 		bufLog:     bufLog,
+		plus:       plus.New(db, lo), // listmonk-plus
 
 		pg: paginator.New(paginator.Opt{
 			DefaultPerPage: 20,
