@@ -24,6 +24,7 @@ const (
 	skipUnconfirmed   = "unconfirmed"
 	skipAlreadyActive = "already_active"
 	skipAlreadyDone   = "already_completed_or_left"
+	skipInOther       = "in_other_sequence"
 )
 
 // classifySQL sorts candidate subscribers into eligibility classes
@@ -38,6 +39,8 @@ SELECT c.id, CASE
     WHEN $4 = 'double' AND sl.status <> 'confirmed' THEN 'unconfirmed'
     WHEN EXISTS (SELECT 1 FROM plus_enrollments e
                  WHERE e.sequence_id = $1 AND e.subscriber_id = c.id AND e.status = 'active') THEN 'active'
+    WHEN $5 AND EXISTS (SELECT 1 FROM plus_enrollments e
+                 WHERE e.sequence_id <> $1 AND e.subscriber_id = c.id AND e.status = 'active') THEN 'in_other_sequence'
     WHEN EXISTS (SELECT 1 FROM plus_enrollments e
                  WHERE e.sequence_id = $1 AND e.subscriber_id = c.id) THEN 'past'
     ELSE 'new'
@@ -49,7 +52,8 @@ ORDER BY c.id`
 
 // enroll applies eligibility and re-entry rules to the given subscribers and
 // creates enrollments, all inside tx. The sequence must have at least one step.
-func (p *Plus) enroll(tx *sqlx.Tx, seq seqRules, subIDs []int, source string) (EnrollResult, error) {
+// With excludeOther, people currently active in another sequence are skipped.
+func (p *Plus) enroll(tx *sqlx.Tx, seq seqRules, subIDs []int, source string, excludeOther bool) (EnrollResult, error) {
 	res := EnrollResult{Skipped: map[string]int{}}
 	if len(subIDs) == 0 {
 		return res, nil
@@ -59,7 +63,7 @@ func (p *Plus) enroll(tx *sqlx.Tx, seq seqRules, subIDs []int, source string) (E
 		ID    int    `db:"id"`
 		Class string `db:"class"`
 	}
-	if err := tx.Select(&rows, classifySQL, seq.ID, pq.Array(subIDs), seq.ListID, seq.ListOptin); err != nil {
+	if err := tx.Select(&rows, classifySQL, seq.ID, pq.Array(subIDs), seq.ListID, seq.ListOptin, excludeOther); err != nil {
 		return res, fmt.Errorf("classifying subscribers: %w", err)
 	}
 

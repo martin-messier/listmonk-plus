@@ -14,16 +14,29 @@ All hooks are marked in code with a `listmonk-plus` comment: `git grep -n "listm
 | 4 | `cmd/public.go` `processSubForm()`, existing-subscriber branch | `a.plus.ActiveListIDs(...)` before `UpdateSubscriberWithLists`, `a.plus.RecordRepeated(...)` after success | Emit `subscription.repeated` (status doesn't change, so the DB trigger can't see it). Covers `/subscription/form` and `/api/public/subscription` | M1 |
 | 5 | `cmd/main.go` after `app` is created | `go app.plus.Run()` | Start the sequence worker | M2 |
 | 6 | `cmd/main.go` reload closer, **before `mgr.Close()`** | `app.plus.Close()` | The worker pushes into the manager's queue; pushing after it's closed would panic. Order matters. | M2 |
-| 7 | `cmd/handlers.go`, authenticated group, before "API endpoints" | `a.plus.RegisterAPI(g, pm)` | `/api/plus/*` admin API | M2 |
+| 7 | `cmd/handlers.go`, authenticated group, before "API endpoints" | `a.plus.RegisterAPI(g, pm)` + `a.registerPlusViews(g, pm)` | `/api/plus/*` admin API and `/admin/plus/sequences*` pages | M2, M3 |
 | 8 | `cmd/handlers.go`, public group, after `/robots.txt` | `a.plus.RegisterPublic(g)` | `/plus/seq/next/:uuid` page | M2 |
 | 9 | `internal/manager/manager.go` `makeGnericFuncMap()` (+ import) | `maps.Copy(funcs, tplfuncs.Placeholders())` | Lets tx templates using `{{ SequenceNextURL }}` be saved/previewed; real values are injected at send time | M2 |
 | 10 | `permissions.json` | `sequences` group: `sequences:get`, `sequences:manage` | Role-based access to the API | M2 |
+| 11 | `static/admin/partials/sidebar.html`, before the Users group | "Sequences" menu (`sequences.*` page IDs) | Navigation | M3 |
+
+## Our files inside upstream folders
+
+These are new files (no merge conflicts possible), but they rely on upstream conventions that a
+release could change: admin templates are auto-loaded from `static/admin/views/*.html`, JS entry
+points from `static/admin/assets/js/views/*.js`, and `cmd/plus_views.go` uses `adminView`,
+`newAdminView`, `adminPage` and `uriAdmin` from package main.
+
+- `cmd/plus_views.go`
+- `static/admin/views/plus-sequences.html`, `static/admin/views/plus-sequence.html`
+- `static/admin/assets/js/views/plus-sequences.js` (imports `api`, `urls` from `main.js` and `utils.js`)
 
 ## Database objects on upstream tables
 
 | Object | On | Defined in | Notes |
 |---|---|---|---|
 | Triggers `plus_sub_lists_insert/update/delete` | `subscriber_lists` | `internal/plus/sql/triggers.sql` | Re-applied on every start. If upstream renames/restructures `subscriber_lists` or its `status` values, update the trigger functions. |
+| Super Admin role permissions | `roles` (id 1) | migration `0003_super_admin_perms.sql` | Adds `sequences:get/manage`. Templates check stored permissions, so new permissions must be granted explicitly. |
 | Foreign keys from `plus_*` tables | `lists`, `subscribers`, `templates` | `internal/plus/sql/migrations/` | Upstream `--install` (non-idempotent) drops these tables with CASCADE, which also drops our FKs. Only relevant for full reinstalls. |
 
 ## Merge checklist
@@ -31,6 +44,7 @@ All hooks are marked in code with a `listmonk-plus` comment: `git grep -n "listm
 1. `git fetch upstream --tags` and merge the new release tag into a branch.
 2. Resolve conflicts; re-check every row above.
 3. Build, run `go test ./...`, start with `plus/scripts/dev-restart.sh`.
-4. Run `plus/scripts/test-events.py` and, with `PLUS_WORKER_INTERVAL=2s plus/scripts/dev-restart.sh`,
+4. Check the Sequences pages in the browser (list, editor tabs, enroll dialog).
+5. Run `plus/scripts/test-events.py` and, with `PLUS_WORKER_INTERVAL=2s plus/scripts/dev-restart.sh`,
    `plus/scripts/test-sequences.py` (all must pass).
-5. Never push upstream `v*` tags to our repo (they'd trigger upstream's release workflow if Actions were enabled).
+6. Never push upstream `v*` tags to our repo (they'd trigger upstream's release workflow if Actions were enabled).

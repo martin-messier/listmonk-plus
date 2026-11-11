@@ -141,8 +141,9 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 			})
 		)
 
-		// listmonk-plus: sequences admin API.
+		// listmonk-plus: sequences admin API and pages.
 		a.plus.RegisterAPI(g, pm)
+		a.registerPlusViews(g, pm)
 
 		// API endpoints.
 		g.GET("/api/health", a.HealthCheck)

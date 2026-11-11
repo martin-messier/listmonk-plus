@@ -41,12 +41,12 @@ only change while `draft`. A list can have only one `active`/`paused` sequence w
 | Method | Path | Body / notes |
 |---|---|---|
 | GET | `/api/plus/sequences/:id/enrollments?status=&page=&per_page=` | Newest first; `per_page` ≤ 500 |
-| POST | `/api/plus/sequences/:id/enrollments` | `{subscriber_ids: [..]}` **or** `{all: true}` (every member of the list); optional `source`: `manual` \| `manual-bulk` \| `api` |
+| POST | `/api/plus/sequences/:id/enrollments` | `{subscriber_ids: [..]}` and/or `{subscriber_emails: [..]}`, **or** `{all: true}` (every member of the list). Optional: `source` (`manual` \| `manual-bulk` \| `api`), `exclude_other_sequences` (skip people active in another sequence), `dry_run` (preview: nothing is saved, response has `dry_run: true`) |
 | DELETE | `/api/plus/sequences/:id/enrollments/:enrID` | Cancel an active enrollment |
 
 Enroll response: `{enrolled, restarted, skipped: {reason: count}}`. Skip reasons: `not_found`,
 `not_on_list`, `unsubscribed`, `unconfirmed` (double opt-in lists), `subscriber_disabled`,
-`subscriber_blocklisted`, `already_active`, `already_completed_or_left`. Needs the sequence to be
+`subscriber_blocklisted`, `already_active`, `already_completed_or_left`, `in_other_sequence`. Needs the sequence to be
 `active` or `paused`.
 
 ## Template function

@@ -20,7 +20,8 @@ SELECT s.id, s.uuid, s.name, s.status, s.list_id, l.name AS list_name, l.optin A
        s.created_at, s.updated_at,
        COALESCE((SELECT jsonb_object_agg(status, n) FROM
                    (SELECT status, COUNT(*) AS n FROM plus_enrollments
-                    WHERE sequence_id = s.id GROUP BY status) x), '{}') AS stats
+                    WHERE sequence_id = s.id GROUP BY status) x), '{}') AS stats,
+       (SELECT COUNT(*) FROM plus_sequence_steps WHERE sequence_id = s.id) AS step_count
 FROM plus_sequences s JOIN lists l ON l.id = s.list_id`
 
 const stepSelect = `
@@ -29,6 +30,9 @@ SELECT st.id, st.uuid, st.sequence_id, st.position, st.delay::TEXT AS delay,
        st.template_id, t.name AS template_name, st.subject, st.skip_landing_url,
        st.created_at, st.updated_at
 FROM plus_sequence_steps st JOIN templates t ON t.id = st.template_id`
+
+// errDryRun rolls back a preview transaction.
+var errDryRun = errors.New("dry run")
 
 func errNotFound(what string) error {
 	return echo.NewHTTPError(http.StatusNotFound, what+" not found")
@@ -376,9 +380,16 @@ func (p *Plus) deleteStep(seqID, stepID int) (Sequence, error) {
 // --- enrollments -----------------------------------------------------------
 
 type enrollInput struct {
-	SubscriberIDs []int  `json:"subscriber_ids"`
-	All           bool   `json:"all"`
-	Source        string `json:"source"`
+	SubscriberIDs    []int    `json:"subscriber_ids"`
+	SubscriberEmails []string `json:"subscriber_emails"`
+	All              bool     `json:"all"`
+	Source           string   `json:"source"`
+
+	// Skip people currently active in another sequence.
+	ExcludeOther bool `json:"exclude_other_sequences"`
+
+	// Preview: compute the result without saving anything.
+	DryRun bool `json:"dry_run"`
 }
 
 func (p *Plus) enrollManual(seqID int, in enrollInput) (EnrollResult, error) {
@@ -392,8 +403,9 @@ func (p *Plus) enrollManual(seqID int, in enrollInput) (EnrollResult, error) {
 	if len(seq.Steps) == 0 {
 		return EnrollResult{}, errBad("the sequence has no steps")
 	}
-	if in.All == (len(in.SubscriberIDs) > 0) {
-		return EnrollResult{}, errBad("send either subscriber_ids or all=true")
+	hasList := len(in.SubscriberIDs) > 0 || len(in.SubscriberEmails) > 0
+	if in.All == hasList {
+		return EnrollResult{}, errBad("send either subscriber_ids / subscriber_emails, or all=true")
 	}
 
 	source := in.Source
@@ -407,7 +419,36 @@ func (p *Plus) enrollManual(seqID int, in enrollInput) (EnrollResult, error) {
 		return EnrollResult{}, errBad("source must be manual, manual-bulk or api")
 	}
 
-	ids := in.SubscriberIDs
+	ids := append([]int{}, in.SubscriberIDs...)
+	notFound := 0
+	if len(in.SubscriberEmails) > 0 {
+		emails := make([]string, 0, len(in.SubscriberEmails))
+		for _, e := range in.SubscriberEmails {
+			if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+				emails = append(emails, e)
+			}
+		}
+		var found []struct {
+			ID    int    `db:"id"`
+			Email string `db:"email"`
+		}
+		if err := p.db.Select(&found, `SELECT id, LOWER(email) AS email FROM subscribers WHERE LOWER(email) = ANY($1::TEXT[])`,
+			pq.Array(emails)); err != nil {
+			return EnrollResult{}, err
+		}
+		seen := map[string]bool{}
+		for _, f := range found {
+			ids = append(ids, f.ID)
+			seen[f.Email] = true
+		}
+		uniq := map[string]bool{}
+		for _, e := range emails {
+			if !seen[e] && !uniq[e] {
+				notFound++
+			}
+			uniq[e] = true
+		}
+	}
 	if in.All {
 		ids = []int{}
 		if err := p.db.Select(&ids, `SELECT subscriber_id FROM subscriber_lists WHERE list_id = $1 ORDER BY subscriber_id`,
@@ -424,10 +465,23 @@ func (p *Plus) enrollManual(seqID int, in enrollInput) (EnrollResult, error) {
 	var res EnrollResult
 	err = p.inTx(func(tx *sqlx.Tx) error {
 		var err error
-		res, err = p.enroll(tx, rules, ids, source)
+		res, err = p.enroll(tx, rules, ids, source, in.ExcludeOther)
+		if err == nil && in.DryRun {
+			return errDryRun // roll back
+		}
 		return err
 	})
-	if err == nil && res.Enrolled+res.Restarted > 0 {
+	if errors.Is(err, errDryRun) {
+		err = nil
+		res.DryRun = true
+	}
+	if notFound > 0 {
+		if res.Skipped == nil {
+			res.Skipped = map[string]int{}
+		}
+		res.Skipped[skipNotFound] += notFound
+	}
+	if err == nil && !res.DryRun && res.Enrolled+res.Restarted > 0 {
 		p.Wake() // steps with a 0 delay go out right away
 	}
 	return res, err

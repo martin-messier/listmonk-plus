@@ -149,7 +149,7 @@ func (p *Plus) handleEvent(tx *sqlx.Tx, e event, auto map[int]seqRules) error {
 		if !ok || !triggerMatches(seq.ListOptin, e) {
 			return nil
 		}
-		res, err := p.enroll(tx, seq, []int{subID}, SrcTrigger)
+		res, err := p.enroll(tx, seq, []int{subID}, SrcTrigger, false)
 		if err != nil {
 			return err
 		}

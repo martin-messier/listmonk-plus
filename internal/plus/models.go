@@ -1,6 +1,7 @@
 package plus
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/jmoiron/sqlx/types"
@@ -58,9 +59,17 @@ type Sequence struct {
 	UpdatedAt          time.Time   `db:"updated_at" json:"updated_at"`
 
 	// Counts of enrollments by status.
-	Stats types.JSONText `db:"stats" json:"stats"`
+	Stats     types.JSONText `db:"stats" json:"stats"`
+	StepCount int            `db:"step_count" json:"step_count"`
 
 	Steps []Step `db:"-" json:"steps"`
+}
+
+// Count returns the number of enrollments with the given status.
+func (s Sequence) Count(status string) int {
+	var m map[string]int
+	_ = json.Unmarshal(s.Stats, &m)
+	return m[status]
 }
 
 // Step is one email in a sequence.
@@ -100,6 +109,8 @@ type Enrollment struct {
 
 // EnrollResult summarises an enrollment request.
 type EnrollResult struct {
+	// DryRun is true when nothing was saved (preview).
+	DryRun    bool           `json:"dry_run"`
 	Enrolled  int            `json:"enrolled"`
 	Restarted int            `json:"restarted"`
 	Skipped   map[string]int `json:"skipped"`
