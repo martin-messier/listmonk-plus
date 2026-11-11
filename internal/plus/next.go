@@ -80,6 +80,8 @@ type nextState struct {
 func (p *Plus) RegisterPublic(g *echo.Group) {
 	g.GET("/plus/seq/next/:uuid", p.handleNextPage)
 	g.POST("/plus/seq/next/:uuid", p.handleNextSubmit)
+	g.GET("/plus/seq/unsubscribe/:uuid", p.handleUnsubPage)
+	g.POST("/plus/seq/unsubscribe/:uuid", p.handleUnsubSubmit)
 }
 
 func (p *Plus) loadNextState(uuid string) (nextState, string, error) {

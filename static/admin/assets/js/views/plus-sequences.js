@@ -123,7 +123,21 @@ function editorView(seq, opts) {
       u.redirect(this.base, { message: `Deleted "${this.seq.name}"` });
     },
 
+    // Whether a template has a given flag (has_unsub / has_next).
+    tplHas(id, flag) {
+      const t = this.opts.templates.find((x) => x.id === Number(id));
+      return t ? t[flag] : true;
+    },
+
     async setStatus(status) {
+      if (status === 'active') {
+        const missing = this.steps.filter((st) => !this.tplHas(st.template_id, 'has_unsub')).map((st) => st.position);
+        if (missing.length > 0 && !(await u.confirm(
+          `Step${missing.length > 1 ? 's' : ''} ${missing.join(', ')} ${missing.length > 1 ? 'have' : 'has'} no unsubscribe link `
+          + '({{ SequenceUnsubscribeURL }}). Marketing emails should always include one. Activate anyway?'))) {
+          return;
+        }
+      }
       await api('plus.status', `/plus/sequences/${this.seq.id}`, 'PUT', { status });
       u.reload({ message: status === 'active' ? 'Sequence activated' : 'Sequence paused' });
     },

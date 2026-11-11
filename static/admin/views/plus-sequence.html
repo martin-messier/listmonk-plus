@@ -63,6 +63,8 @@
 	.plus-delay { display: flex; gap: var(--space-2); }
 	.plus-delay input { max-width: 7rem; }
 	.plus-wait { text-align: center; color: var(--muted-foreground, inherit); opacity: .75; margin: calc(var(--space-2) * -1) 0 var(--space-3); font-size: .85em; }
+	.plus-warn { display: block; margin-top: var(--space-1); color: var(--tone-amber, #b45309); }
+	.plus-warn svg { vertical-align: -0.15em; }
 	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
 	.plus-stats a { text-decoration: none; }
 	.plus-enroll-result dl { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-3) 0 0; }
@@ -84,9 +86,15 @@
 	<p class="text-light text-8">
 		Each step waits the given time <em>after the previous email was sent</em> (step 1: after the person enters the sequence), then sends a
 		<a href="{{ URI "/admin/templates" }}">transactional template</a>.
-		To offer a "send me the next email now" link, put <code>{{ "{{ SequenceNextURL }}" }}</code> in a link in the template, e.g.
-		<code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>. Leave it out and the step just waits.
+		Two tags you can use in those templates:
 	</p>
+	<ul class="text-light text-8">
+		<li><strong>Unsubscribe link (required):</strong> <code>&lt;a href="{{ "{{ SequenceUnsubscribeURL }}" }}"&gt;Unsubscribe&lt;/a&gt;</code>
+			— unsubscribes the person from this sequence's list. (Listmonk's <code>{{ "{{ UnsubscribeURL }}" }}</code> only works in campaigns.)
+			One-click unsubscribe headers for Gmail/Yahoo are added automatically.</li>
+		<li><strong>"Send me the next email now" (optional):</strong> <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>.
+			Leave it out and the step just waits.</li>
+	</ul>
 
 	<template x-if="opts.templates.length === 0">
 		<p class="card">{{ Icon "alert-triangle" }} There are no transactional templates yet.
@@ -163,6 +171,8 @@
 			</template>
 		</select>
 		<small data-hint><a :href="'{{ URI "/admin/templates" }}/' + {{ $m }}.template_id" x-show="{{ $m }}.template_id" target="_blank">Open template</a></small>
+		<small class="plus-warn" x-show="{{ $m }}.template_id && !tplHas({{ $m }}.template_id, 'has_unsub')" data-testid="warn-unsub">
+			{{ Icon "alert-triangle" }} This template has no <code>{{ "{{ SequenceUnsubscribeURL }}" }}</code> link.</small>
 	</div>
 	<label data-field>
 		Subject (optional)

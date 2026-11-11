@@ -3,6 +3,7 @@ package plus
 import (
 	"fmt"
 	"maps"
+	"net/textproto"
 
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/models"
@@ -25,9 +26,10 @@ func (p *Plus) sendStep(subID, templateID int, subject null.String, from, sendUU
 
 	// Per-message functions. The cached template was compiled with placeholders
 	// (see tplfuncs), so compile a copy with the real ones.
-	nextURL := p.nextURL(sendUUID)
+	nextURL, unsubURL := p.nextURL(sendUUID), p.unsubURL(sendUUID)
 	funcs := maps.Clone(p.opt.Manager.GenericTemplateFuncs())
 	funcs["SequenceNextURL"] = func() string { return nextURL }
+	funcs["SequenceUnsubscribeURL"] = func() string { return unsubURL }
 
 	tpl := *cached
 	if err := tpl.Compile(funcs); err != nil {
@@ -54,10 +56,21 @@ func (p *Plus) sendStep(subID, templateID int, subject null.String, from, sendUU
 		Body:        m.Body,
 		AltBody:     []byte(m.AltBody),
 		Attachments: append([]models.Attachment(nil), cached.Attachments...),
+
+		// One-click unsubscribe (RFC 8058), required by Gmail and Yahoo for
+		// bulk senders. Mail clients POST to this URL; see unsub.go.
+		Headers: textproto.MIMEHeader{
+			"List-Unsubscribe":      {"<" + unsubURL + ">"},
+			"List-Unsubscribe-Post": {"List-Unsubscribe=One-Click"},
+		},
 	}
 	return p.opt.Manager.PushMessage(msg)
 }
 
 func (p *Plus) nextURL(sendUUID string) string {
 	return p.opt.RootURL + "/plus/seq/next/" + sendUUID
+}
+
+func (p *Plus) unsubURL(sendUUID string) string {
+	return p.opt.RootURL + "/plus/seq/unsubscribe/" + sendUUID
 }

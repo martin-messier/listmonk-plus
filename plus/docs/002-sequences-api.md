@@ -49,20 +49,31 @@ Enroll response: `{enrolled, restarted, skipped: {reason: count}}`. Skip reasons
 `subscriber_blocklisted`, `already_active`, `already_completed_or_left`, `in_other_sequence`. Needs the sequence to be
 `active` or `paused`.
 
-## Template function
+## Template functions
 
 In any tx template used by a step:
 
 ```html
+<!-- Required: unsubscribes the person from the sequence's list -->
+<a href="{{ SequenceUnsubscribeURL }}">Unsubscribe</a>
+
+<!-- Optional: skip the current wait -->
 <a href="{{ SequenceNextURL }}">Can't wait? Get the next email now</a>
 ```
 
-Outside a sequence (normal tx sends, previews) it renders as an empty string.
+Outside a sequence (normal tx sends, previews) both render as an empty string. Listmonk's own
+`{{ UnsubscribeURL }}` only exists in campaign templates; the separate name guarantees the two
+never interfere. Every sequence email also gets `List-Unsubscribe` and
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers (RFC 8058) pointing to the same URL.
 
 ## Public pages
 
-`GET /plus/seq/next/:sendUUID` shows a confirmation button (GET never changes anything, because
-email scanners pre-fetch links). `POST` to the same URL skips the current wait.
+GET never changes anything (email scanners pre-fetch links); it shows a confirmation button.
+
+| Path | GET | POST |
+|---|---|---|
+| `/plus/seq/next/:sendUUID` | Confirmation button | Skips the current wait |
+| `/plus/seq/unsubscribe/:sendUUID` | Confirmation button | Unsubscribes from the sequence's list (also the one-click request mail providers send, no confirmation) |
 
 ## Worker
 

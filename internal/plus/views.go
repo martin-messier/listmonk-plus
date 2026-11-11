@@ -14,6 +14,10 @@ type ListOption struct {
 type TemplateOption struct {
 	ID   int    `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
+
+	// Whether the template uses {{ SequenceUnsubscribeURL }} / {{ SequenceNextURL }}.
+	HasUnsub bool `db:"has_unsub" json:"has_unsub"`
+	HasNext  bool `db:"has_next" json:"has_next"`
 }
 
 // FormOptions holds the choices for the sequence and step editors.
@@ -49,7 +53,11 @@ func (p *Plus) Options() (FormOptions, error) {
 	if err := p.db.Select(&out.Lists, `SELECT id, name, optin FROM lists WHERE status = 'active' ORDER BY LOWER(name)`); err != nil {
 		return out, err
 	}
-	if err := p.db.Select(&out.Templates, `SELECT id, name FROM templates WHERE type = 'tx' ORDER BY LOWER(name)`); err != nil {
+	if err := p.db.Select(&out.Templates, `
+		SELECT id, name,
+		       body ~ '\{\{-?\s*SequenceUnsubscribeURL\s*-?\}\}' AS has_unsub,
+		       body ~ '\{\{-?\s*SequenceNextURL\s*-?\}\}' AS has_next
+		FROM templates WHERE type = 'tx' ORDER BY LOWER(name)`); err != nil {
 		return out, err
 	}
 	return out, nil

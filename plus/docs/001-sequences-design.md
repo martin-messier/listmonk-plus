@@ -217,8 +217,11 @@ A template function, usable in any step's template:
 
 Listmonk's `{{ UnsubscribeURL }}` only exists for **campaign** templates, not tx templates.
 Sequence emails are marketing, so they must have one. We will:
-- Provide `{{ UnsubscribeURL }}` / `{{ ManageURL }}` in the sequence render path (reusing
-  Listmonk's existing public unsubscribe pages).
+- ~~Provide `{{ UnsubscribeURL }}` / `{{ ManageURL }}`~~ **Implemented (M4) as
+  `{{ SequenceUnsubscribeURL }}`** with its own page (`/plus/seq/unsubscribe/:sendUUID`): Listmonk's
+  unsubscribe page is campaign-bound (for non-campaign mail it unsubscribes from *all* lists), and a
+  separate name can never clash with campaign templates' `{{ UnsubscribeURL }}`. It unsubscribes from
+  the sequence's list only.
 - Add `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers
   (required by Gmail/Yahoo bulk-sender rules).
 - Warn in the admin if a step's template lacks `{{ UnsubscribeURL }}`.
@@ -274,7 +277,8 @@ Permissions (added to `permissions.json`): `sequences:get`, `sequences:manage`.
 3. ✅ **Admin UI** (done 2026-11-11): Sequences menu, list, editor (steps / settings / activity tabs), enroll
    dialog with preview. Deferred: subscriber-page panel, narrowing bulk enrollment with a subscriber
    search, translations (pages are English-only).
-4. **Hardening**: unsubscribe headers/links, retries, tests, docs; deploy to staging on the VPS.
+4. **Hardening**: ✅ unsubscribe link + one-click headers, editor warning + activation check,
+   retries (M2), tests (44 engine + 15 event checks), docs (done 2026-11-11). ⏳ Deploy to staging on the VPS.
 
 ## 13. Toward the trigger engine (later)
 

@@ -14,5 +14,8 @@ func Placeholders() template.FuncMap {
 	return template.FuncMap{
 		// URL of the "send me the next email now" page for this email.
 		"SequenceNextURL": func() string { return "" },
+
+		// URL of the page that unsubscribes the person from the sequence's list.
+		"SequenceUnsubscribeURL": func() string { return "" },
 	}
 }

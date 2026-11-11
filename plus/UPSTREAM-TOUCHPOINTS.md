@@ -16,7 +16,7 @@ All hooks are marked in code with a `listmonk-plus` comment: `git grep -n "listm
 | 6 | `cmd/main.go` reload closer, **before `mgr.Close()`** | `app.plus.Close()` | The worker pushes into the manager's queue; pushing after it's closed would panic. Order matters. | M2 |
 | 7 | `cmd/handlers.go`, authenticated group, before "API endpoints" | `a.plus.RegisterAPI(g, pm)` + `a.registerPlusViews(g, pm)` | `/api/plus/*` admin API and `/admin/plus/sequences*` pages | M2, M3 |
 | 8 | `cmd/handlers.go`, public group, after `/robots.txt` | `a.plus.RegisterPublic(g)` | `/plus/seq/next/:uuid` page | M2 |
-| 9 | `internal/manager/manager.go` `makeGnericFuncMap()` (+ import) | `maps.Copy(funcs, tplfuncs.Placeholders())` | Lets tx templates using `{{ SequenceNextURL }}` be saved/previewed; real values are injected at send time | M2 |
+| 9 | `internal/manager/manager.go` `makeGnericFuncMap()` (+ import) | `maps.Copy(funcs, tplfuncs.Placeholders())` | Lets tx templates using `{{ SequenceNextURL }}` / `{{ SequenceUnsubscribeURL }}` be saved/previewed; real values are injected at send time | M2 |
 | 10 | `permissions.json` | `sequences` group: `sequences:get`, `sequences:manage` | Role-based access to the API | M2 |
 | 11 | `static/admin/partials/sidebar.html`, before the Users group | "Sequences" menu (`sequences.*` page IDs) | Navigation | M3 |
 

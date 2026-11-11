@@ -349,5 +349,61 @@ r = wait_until(lambda: sql("SELECT sd.status, sd.attempts, (e.next_send_at > NOW
 check("35 a failing step is marked failed and retried ~5 min later (not lost, not resent)",
       r and r[0][:3] == ["failed", "1", "true"], r)
 
+# --- unsubscribe (milestone 4) -----------------------------------------------------------
+
+def raw_mails(to):
+    q = urllib.parse.urlencode({"kind": "to", "query": to, "limit": 50})
+    return list(reversed(http("GET", "/api/v2/search?" + q, auth=False, base=MAILHOG)["items"]))
+
+
+ut = http("POST", "/api/templates", {"name": "plus-test unsub " + RUN, "type": "tx", "subject": "Unsub test " + RUN,
+                                     "body": '<p>Hi {{ .Subscriber.Name }}</p><p><a href="{{ SequenceUnsubscribeURL }}">Unsubscribe</a></p>'})["data"]["id"]
+check("36 tx template using {{ SequenceUnsubscribeURL }} can be saved", True)
+useq = http("POST", "/api/plus/sequences", {"name": "Unsub " + RUN, "list_id": single["id"], "trigger_enabled": False})["data"]
+http("POST", "/api/plus/sequences/{}/steps".format(useq["id"]), {"template_id": ut, "delay": "0"})
+http("POST", "/api/plus/sequences/{}/steps".format(useq["id"]), {"template_id": ut, "delay": "1 hour"})
+http("PUT", "/api/plus/sequences/{}".format(useq["id"]), {"status": "active"})
+
+page_html = http("GET", "/admin/plus/sequences/{}".format(useq["id"]), raw=True)[1]
+check("37 editor knows which templates have an unsubscribe link",
+      re.search(r'"id":{},"name":"[^"]*","has_unsub":true'.format(ut), page_html) is not None
+      and re.search(r'"id":{},"name":"[^"]*","has_unsub":false'.format(t1), page_html) is not None)
+
+ue = addr("ursula")
+U = http("POST", "/api/subscribers", {"email": ue, "name": "Ursula", "status": "enabled",
+                                      "lists": [single["id"], double["id"]], "preconfirm_subscriptions": True})["data"]["id"]
+http("POST", "/api/plus/sequences/{}/enrollments".format(useq["id"]), {"subscriber_ids": [U]})
+m = wait_until(lambda: [x for x in raw_mails(ue) if x["Content"]["Headers"].get("Subject", [""])[0] == "Unsub test " + RUN])
+# Parse the raw message: the mail library folds long headers onto a second line,
+# which Mailhog's own header list doesn't unfold (real mail providers do).
+_parsed = email.message_from_string(m[0]["Raw"]["Data"], policy=email.policy.default) if m else {}
+hdr = {k: [str(_parsed[k]).strip()] for k in ("List-Unsubscribe", "List-Unsubscribe-Post") if m and _parsed[k]}
+body = next((b for subj, b in mails(ue) if subj == "Unsub test " + RUN), "")
+um = re.search(r'href="([^"]*/plus/seq/unsubscribe/[0-9a-f-]{36})"', body)
+unsub_url = um.group(1) if um else ""
+check("38 email has an unsubscribe link", bool(unsub_url), body[:300])
+check("39 email has one-click List-Unsubscribe headers pointing to the same URL",
+      hdr.get("List-Unsubscribe", [""])[0] == "<{}>".format(unsub_url)
+      and hdr.get("List-Unsubscribe-Post", [""])[0] == "List-Unsubscribe=One-Click", hdr.get("List-Unsubscribe"))
+
+upath = urllib.parse.urlparse(unsub_url).path if unsub_url else "/plus/seq/unsubscribe/x"
+_, pg, _ = http("GET", upath, auth=False, raw=True)
+st = lambda lid: sql("SELECT status FROM subscriber_lists WHERE subscriber_id = {} AND list_id = {}".format(U, lid))[0][0]
+check("40 GET on the unsubscribe link only asks for confirmation", 'method="post"' in pg and st(single["id"]) == "confirmed", st(single["id"]))
+
+http("POST", upath, form={"List-Unsubscribe": "One-Click"}, auth=False, raw=True)  # what Gmail sends
+check("41 one-click POST unsubscribes from the sequence's list only",
+      st(single["id"]) == "unsubscribed" and st(double["id"]) == "confirmed", (st(single["id"]), st(double["id"])))
+r = wait_until(lambda: (lambda x: x if x and x[-1][0] == "cancelled" else None)(enrollments(useq["id"], U)))
+check("42 unsubscribing stops the sequence", r and r[-1][2] == "unsubscribed", enrollments(useq["id"], U))
+_, pg, _ = http("GET", upath, auth=False, raw=True)
+check("43 the link afterwards says they're unsubscribed", "unsubscribed" in pg.lower() and 'method="post"' not in pg, pg[:200])
+code = None
+try:
+    http("GET", "/plus/seq/unsubscribe/00000000-0000-0000-0000-000000000000", auth=False, raw=True)
+except HTTPError as e:
+    code = e.code
+check("44 unknown unsubscribe link -> 404 page", code == 404, code)
+
 print("\n{}/{} passed".format(sum(RESULTS), len(RESULTS)))
 sys.exit(0 if all(RESULTS) else 1)
