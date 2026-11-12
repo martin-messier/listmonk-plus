@@ -18,6 +18,8 @@ import (
 type plusSequencesView struct {
 	adminView
 	Sequences []plus.Sequence
+	Query     string
+	Status    string
 }
 
 type plusSequenceView struct {
@@ -58,9 +60,33 @@ func (a *App) ViewPlusSequences(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Filters: ?query= (name or list name) and ?status=.
+	query := strings.TrimSpace(c.QueryParam("query"))
+	status := c.QueryParam("status")
+	if status != plus.SeqDraft && status != plus.SeqActive && status != plus.SeqPaused {
+		status = ""
+	}
+	if query != "" || status != "" {
+		q := strings.ToLower(query)
+		out := seqs[:0]
+		for _, s := range seqs {
+			if status != "" && s.Status != status {
+				continue
+			}
+			if q != "" && !strings.Contains(strings.ToLower(s.Name), q) && !strings.Contains(strings.ToLower(s.ListName), q) {
+				continue
+			}
+			out = append(out, s)
+		}
+		seqs = out
+	}
+
 	return c.Render(http.StatusOK, "plus-sequences", plusSequencesView{
 		adminView: newAdminView(c, "Sequences", "", "sequences.all"),
 		Sequences: seqs,
+		Query:     query,
+		Status:    status,
 	})
 }
 

@@ -16,7 +16,10 @@
 <section class="plus-sequence" x-data="plusSequence(_plusSeq, _plusOpts)">
 	<header class="hstack justify-between page-header">
 		<div class="hstack gap-3 page-heading">
-			<h1 class="page-title">{{ $crumb }}</h1>
+			<div class="avatar avatar-title">
+				{{- if not $d.IsNew }}{{ template "avatar-icon" dict "Kind" "sequence" "Name" $s.Name "Href" (printf "%s/%d" $base $s.ID) "Title" $s.Name }}{{ end }}
+				<h1 class="page-title avatar-label">{{ $crumb }}</h1>
+			</div>
 			{{- if not $d.IsNew }}{{ template "plus-seq-status" $s.Status }}{{ end }}
 		</div>
 		{{- if and (not $d.IsNew) $canManage }}
@@ -89,6 +92,7 @@
 	.plus-enroll-result dd { margin: 0; }
 </style>
 
+{{ template "plus-avatar-style" }}
 <script type="module" src="{{ URI "/admin/static/js/views/plus-sequences.js" }}?v={{ .AssetVersion }}" defer></script>
 {{ template "admin-footer" . -}}
 {{ end }}

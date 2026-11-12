@@ -67,6 +67,34 @@ function listView() {
       await api('plus.delete', `/plus/sequences/${id}`, 'DELETE');
       u.reload({ message: `Deleted "${name}"` });
     },
+
+    // Bulk actions (selected IDs from the shared table component). Each sequence
+    // is handled on its own, so one refusal (e.g. activating a sequence with no
+    // steps, deleting an active one) doesn't stop the others.
+    async _bulk(ids, fn, doneLabel) {
+      let ok = 0;
+      const failed = [];
+      for (const id of ids) {
+        try {
+          await fn(id);
+          ok++;
+        } catch (e) {
+          failed.push(e.message);
+        }
+      }
+      const msg = `${doneLabel}: ${ok} of ${ids.length}` + (failed.length ? ` (${failed.length} skipped: ${[...new Set(failed)].join('; ')})` : '');
+      u.reload({ message: msg, variant: failed.length ? 'warning' : 'success' });
+    },
+
+    async bulkStatus(ids, status) {
+      await this._bulk(ids, (id) => api('plus.status', `/plus/sequences/${id}`, 'PUT', { status }),
+        status === 'active' ? 'Activated' : 'Paused');
+    },
+
+    async bulkDelete(ids) {
+      if (!(await u.confirm(`Delete ${ids.length} sequence${ids.length > 1 ? 's' : ''} and their history? Active sequences are skipped. This can't be undone.`))) return;
+      await this._bulk(ids, (id) => api('plus.delete', `/plus/sequences/${id}`, 'DELETE'), 'Deleted');
+    },
   };
 }
 
