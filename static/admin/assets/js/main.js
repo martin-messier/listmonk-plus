@@ -87,31 +87,56 @@ function listenErrorEvents() {
 
   // Extract the message out of `file.go:123: message` log lines.
   const reMatchLog = /(.+?)\.go:\d+:(.+?)$/im;
-  const src = new EventSource(`${urls.api}/events?type=error`, { withCredentials: true });
 
+  // listmonk-plus: the stream is a long-lived connection. Browsers that keep
+  // left pages alive (back/forward cache) or pre-render links would otherwise
+  // pile up open streams and exhaust the ~6 connections per host allowed over
+  // HTTP/1.1, stalling every new request. So: open it only once the page is
+  // actually shown, close it when the page is hidden, reopen on pageshow.
+  let src = null;
   let numEv = 0;
-  src.onmessage = (e) => {
-    // Cap the number of toasts to not flood the UI on a burst of errors.
-    if (numEv >= 50) {
-      src.close();
+  const open = () => {
+    if (src || numEv >= 50) {
       return;
     }
-    numEv += 1;
+    src = new EventSource(`${urls.api}/events?type=error`, { withCredentials: true });
+    src.onmessage = (e) => {
+      // Cap the number of toasts to not flood the UI on a burst of errors.
+      if (numEv >= 50) {
+        close();
+        return;
+      }
+      numEv += 1;
 
-    let d = null;
-    try {
-      d = JSON.parse(e.data);
-    } catch {
-      return;
-    }
+      let d = null;
+      try {
+        d = JSON.parse(e.data);
+      } catch {
+        return;
+      }
 
-    if (!d || d.type !== 'error' || !d.message) {
-      return;
-    }
+      if (!d || d.type !== 'error' || !d.message) {
+        return;
+      }
 
-    const msg = reMatchLog.exec(d.message.trim());
-    u.toast(msg ? msg[2].trim() : d.message, 'error');
+      const msg = reMatchLog.exec(d.message.trim());
+      u.toast(msg ? msg[2].trim() : d.message, 'error');
+    };
   };
+  const close = () => {
+    if (src) {
+      src.close();
+      src = null;
+    }
+  };
+
+  window.addEventListener('pagehide', close);
+  window.addEventListener('pageshow', open);
+  if (document.prerendering) {
+    document.addEventListener('prerenderingchange', open, { once: true });
+  } else {
+    open();
+  }
 }
 
 // Return the global Alpine store.

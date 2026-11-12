@@ -27,6 +27,7 @@ All hooks are marked in code with a `listmonk-plus` comment: `git grep -n "listm
 | 17 | `cmd/campaigns.go` `campaignView` struct + `ViewCampaign` (+ import) | `PlusStep *plus.StepRef`, set from `a.plus.StepOf`; page ID `sequences.all` | Lets the campaign screen recognise a step | M5 |
 | 18 | `static/admin/views/campaign.html` | Breadcrumb to the sequence, "Sequence step N of M" badge, banner, `$canSend = false` for steps (hides Start/Schedule) | Native campaign screen for step messages | M5 |
 | 19 | `static/admin/partials/campaign-form.html` | Lists selector disabled + hint for steps; Schedule card hidden for steps | Same | M5 |
+| 20 | `static/admin/assets/js/main.js` `listenErrorEvents()` | Open the `/api/events` stream only once the page is shown (not while pre-rendered), close it on `pagehide`, reopen on `pageshow` | **Upstream bug**: the stream was never closed, so browsers that keep left pages alive or pre-render links (seen with Dia) piled up open streams and hit the ~6 connections/host limit of HTTP/1.1, stalling every click. Worth proposing upstream. Not an issue over HTTP/2 (HTTPS behind Caddy) | M5 |
 
 ## Our files inside upstream folders
 
