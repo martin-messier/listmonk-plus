@@ -69,11 +69,13 @@
 	.plus-delay { display: flex; gap: var(--space-2); }
 	.plus-delay input { max-width: 7rem; }
 	.plus-wait { text-align: center; color: var(--muted-foreground, inherit); opacity: .75; margin: calc(var(--space-2) * -1) 0 var(--space-3); font-size: .85em; }
-	.plus-step-name { flex: 1; min-width: 0; }
-	.plus-step-name input { width: 100%; max-width: 420px; }
-	.plus-step-name strong { font-size: 1.05em; }
-	.plus-step-msg { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap;
-	                 padding: var(--space-3); margin-bottom: var(--space-4); border-radius: var(--radius-medium, 8px); background: var(--muted, rgba(0,0,0,.04)); }
+	.plus-step-head { flex-wrap: wrap; }
+	.plus-step-title { display: flex; align-items: baseline; gap: var(--space-3); flex: 1 1 260px; min-width: 0; flex-wrap: wrap; }
+	.plus-step-title h3 { white-space: nowrap; }
+	.plus-step-name { min-width: 0; align-items: center; }
+	.plus-step-name strong { font-size: 1.05em; overflow-wrap: anywhere; }
+	.plus-step-name input { width: min(360px, 60vw); }
+	.plus-step-actions { flex: none; margin-left: auto; }
 	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
 	.plus-stats a { text-decoration: none; }
 	.plus-enroll-dialog { width: min(560px, calc(100vw - 32px)); max-width: none; overflow-x: hidden; }
@@ -122,19 +124,10 @@
 			<div class="plus-wait" x-show="i > 0">{{ Icon "clock" }} <span x-text="waitLabel(step)"></span></div>
 			<form class="card plus-step" @submit.prevent="saveStep(step)" :data-testid="'step-' + step.position">
 				<div class="plus-step-head">
-					<h3 class="m-0" x-text="'Step ' + step.position"></h3>
-					{{- if $canManage }}
-					<div class="hstack gap-2">
-						<button type="button" class="ghost small icon" title="Move up" aria-label="Move up" :disabled="isActive || i === 0" @click="moveStep(step, -1)">{{ Icon "arrow-up" }}</button>
-						<button type="button" class="ghost small icon" title="Move down" aria-label="Move down" :disabled="isActive || i === steps.length - 1" @click="moveStep(step, 1)">{{ Icon "arrow-down" }}</button>
-						<button type="button" class="ghost small icon" data-variant="danger" title="{{ .L.T "globals.buttons.delete" }}" aria-label="{{ .L.T "globals.buttons.delete" }}" :disabled="isActive" @click="deleteStep(step)">{{ Icon "trash-2" }}</button>
-					</div>
-					{{- end }}
-				</div>
-				<div class="plus-step-msg">
-					<div class="plus-step-name">
+					<div class="plus-step-title">
+						<h3 class="m-0" x-text="'Step ' + step.position"></h3>
 						<template x-if="!step.editingName">
-							<div class="hstack gap-2">
+							<div class="hstack gap-2 plus-step-name">
 								<strong x-text="step.campaign_name" data-testid="step-name"></strong>
 								{{- if $canManage }}
 								<button type="button" class="ghost small icon" title="Rename" aria-label="Rename" data-testid="btn-rename" @click="startRename(step)">{{ Icon "edit-2" }}</button>
@@ -142,7 +135,7 @@
 							</div>
 						</template>
 						<template x-if="step.editingName">
-							<div class="hstack gap-2">
+							<div class="hstack gap-2 plus-step-name">
 								<input type="text" maxlength="2000" aria-label="Message name" data-testid="input-rename" x-model="step.nameDraft"
 									x-init="$nextTick(() => { $el.focus(); $el.select(); })"
 									@keydown.enter.prevent="saveName(step)" @keydown.escape.prevent="step.editingName = false" />
@@ -151,7 +144,16 @@
 							</div>
 						</template>
 					</div>
-					<a class="button outline small" :href="'{{ URI "/admin/campaigns" }}/' + step.campaign_id + '#tab=content'" data-testid="btn-edit-message">{{ Icon "edit-2" }} Edit message</a>
+					<div class="hstack gap-2 plus-step-actions">
+						{{- if $canManage }}
+						<button type="button" class="ghost small icon" title="Move up" aria-label="Move up" :disabled="isActive || i === 0" @click="moveStep(step, -1)">{{ Icon "arrow-up" }}</button>
+						<button type="button" class="ghost small icon" title="Move down" aria-label="Move down" :disabled="isActive || i === steps.length - 1" @click="moveStep(step, 1)">{{ Icon "arrow-down" }}</button>
+						{{- end }}
+						<a class="button outline small" :href="'{{ URI "/admin/campaigns" }}/' + step.campaign_id + '#tab=content'" data-testid="btn-edit-message">{{ Icon "edit-2" }} Edit message</a>
+						{{- if $canManage }}
+						<button type="button" class="ghost small icon" data-variant="danger" title="{{ .L.T "globals.buttons.delete" }}" aria-label="{{ .L.T "globals.buttons.delete" }}" :disabled="isActive" @click="deleteStep(step)">{{ Icon "trash-2" }}</button>
+						{{- end }}
+					</div>
 				</div>
 				{{ template "plus-step-fields" dict "Root" . "Model" "step" }}
 				{{- if $canManage }}
