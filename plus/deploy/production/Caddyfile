@@ -2,14 +2,6 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# Mailpit (caught emails), password-protected.
-	handle /mailpit* {
-		basic_auth {
-			{$MAILPIT_USER} {$MAILPIT_HASH}
-		}
-		reverse_proxy mailpit:8025
-	}
-
 	# Everything else: Listmonk.
 	handle {
 		reverse_proxy app:9000
