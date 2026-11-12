@@ -55,6 +55,7 @@ type Sequence struct {
 	ReentryAfterExit   string      `db:"reentry_after_exit" json:"reentry_after_exit"`
 	ReentryWhileActive string      `db:"reentry_while_active" json:"reentry_while_active"`
 	FromEmail          null.String `db:"from_email" json:"from_email"`
+	DefaultLandingURL  null.String `db:"default_skip_landing_url" json:"default_skip_landing_url"`
 	CreatedAt          time.Time   `db:"created_at" json:"created_at"`
 	UpdatedAt          time.Time   `db:"updated_at" json:"updated_at"`
 

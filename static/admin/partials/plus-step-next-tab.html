@@ -1,0 +1,59 @@
+{{- /* listmonk-plus: "Next email" tab on a sequence step's campaign screen (views/campaign.html). */ -}}
+{{ define "plus-step-next-tab" -}}
+{{- $st := .Step -}}
+{{- $canManage := .Root.Data.Can "sequences:manage" -}}
+<div role="tabpanel">
+	<div class="page-content content">
+		<section class="card" x-data="plusNextTab({{ ToJSON $st }})" data-testid="panel-next-email">
+			<h3 class="m-0">"Send me the next email now"</h3>
+			<p class="text-light text-8">
+				Put <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code> in this message's content to let
+				readers skip the wait before the next step. They first see a confirmation button (so email scanners can't trigger it),
+				then land on the page below.
+			</p>
+			<label data-field>
+				Landing page for this message (optional)
+				<input type="url" maxlength="2000" x-model="url" data-testid="input-step-landing" {{ if not $canManage }}disabled{{ end }}
+					placeholder="{{ if $st.DefaultLandingURL.Valid }}{{ $st.DefaultLandingURL.String }}{{ else }}https://…{{ end }}" />
+				<small data-hint>
+					{{- if $st.DefaultLandingURL.Valid }}Empty: the sequence's default, <a href="{{ $st.DefaultLandingURL.String }}" target="_blank" rel="noopener">{{ $st.DefaultLandingURL.String }}</a>.
+					{{- else }}Empty: a simple confirmation page. A default for the whole sequence can be set in the sequence's
+					<a href="{{ URI "/admin/plus/sequences" }}/{{ $st.SequenceID }}/settings">Settings</a>.{{ end }}
+				</small>
+			</label>
+			{{- if $canManage }}
+			<footer class="hstack justify-end mt-4">
+				<button type="button" data-variant="primary" data-testid="btn-save-step-landing" @click="save" :disabled="saving" :aria-busy="saving">{{ Icon "save" }} {{ .Root.L.T "globals.buttons.save" }}</button>
+			</footer>
+			{{- end }}
+		</section>
+	</div>
+</div>
+<script>
+	document.addEventListener('alpine:init', () => {
+		window.Alpine.data('plusNextTab', (st) => ({
+			url: st.skip_landing_url || '',
+			saving: false,
+			async save() {
+				const toast = (m, v) => (window.ot && window.ot.toast ? window.ot.toast(m, '', { variant: v }) : window.alert(m));
+				this.saving = true;
+				try {
+					const r = await fetch({{ URI "/api/plus/sequences" }} + `/${st.sequence_id}/steps/${st.step_id}`, {
+						method: 'PUT',
+						headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+						body: JSON.stringify({ skip_landing_url: this.url.trim() }),
+					});
+					const out = await r.json().catch(() => ({}));
+					if (!r.ok) {
+						toast(out.message || r.statusText, 'danger');
+						return;
+					}
+					toast('Landing page saved', 'success');
+				} finally {
+					this.saving = false;
+				}
+			},
+		}));
+	}, { once: true });
+</script>
+{{- end }}

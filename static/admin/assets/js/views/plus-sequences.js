@@ -28,17 +28,15 @@ function stepForm(step) {
     delay_unit: d.unit,
     campaign_id: step ? step.campaign_id : null,
     campaign_name: step ? step.campaign_name : '',
-    campaign_subject: step ? step.campaign_subject : '',
-    sent: step ? step.sent : 0,
-    subject: '',
-    skip_landing_url: step && step.skip_landing_url ? step.skip_landing_url : '',
+    name: '',
+    editingName: false,
+    nameDraft: '',
   };
 }
 
 function stepPayload(f) {
   return {
     delay: `${Math.max(0, Math.floor(Number(f.delay_n) || 0))} ${f.delay_unit}`,
-    skip_landing_url: f.skip_landing_url || '',
   };
 }
 
@@ -112,6 +110,7 @@ function editorView(seq, opts) {
       reentry_while_active: seq ? seq.reentry_while_active : 'continue',
       reentry_after_exit: seq ? seq.reentry_after_exit : 'ignore',
       from_email: seq && seq.from_email ? seq.from_email : '',
+      default_skip_landing_url: seq && seq.default_skip_landing_url ? seq.default_skip_landing_url : '',
     },
     enrollForm: { mode: 'all', exclude_other: true },
     enrollPreview: null,
@@ -164,7 +163,7 @@ function editorView(seq, opts) {
     // Steps.
     async addStep() {
       const body = stepPayload(this.newStep);
-      if (this.newStep.subject) body.subject = this.newStep.subject;
+      if (this.newStep.name.trim()) body.name = this.newStep.name.trim();
       await api('plus.step', `/plus/sequences/${this.seq.id}/steps`, 'POST', body);
       u.reload({ message: 'Step added' });
     },
@@ -172,6 +171,25 @@ function editorView(seq, opts) {
     async saveStep(step) {
       await api('plus.step', `/plus/sequences/${this.seq.id}/steps/${step.id}`, 'PUT', stepPayload(step));
       u.toast(`Step ${step.position} saved`, 'success');
+    },
+
+    startRename(step) {
+      this.steps.forEach((s) => { s.editingName = false; });
+      step.nameDraft = step.campaign_name;
+      step.editingName = true;
+    },
+
+    async saveName(step) {
+      const name = step.nameDraft.trim();
+      if (!name || name === step.campaign_name) {
+        step.editingName = false;
+        return;
+      }
+      const seq = await api('plus.rename', `/plus/sequences/${this.seq.id}/steps/${step.id}`, 'PUT', { name });
+      const fresh = seq.steps.find((s) => s.id === step.id);
+      step.campaign_name = fresh ? fresh.campaign_name : name;
+      step.editingName = false;
+      u.toast('Renamed', 'success');
     },
 
     async moveStep(step, dir) {
@@ -269,6 +287,7 @@ function editorView(seq, opts) {
         reentry_while_active: this.form.reentry_while_active,
         reentry_after_exit: this.form.reentry_after_exit,
         from_email: this.form.from_email || '',
+        default_skip_landing_url: this.form.default_skip_landing_url || '',
       };
     },
   };

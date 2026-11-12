@@ -65,12 +65,15 @@ func (p *Plus) Options() (FormOptions, error) {
 
 // StepRef identifies the sequence step that owns a campaign.
 type StepRef struct {
-	SequenceID     int    `db:"sequence_id" json:"sequence_id"`
-	SequenceName   string `db:"sequence_name" json:"sequence_name"`
-	SequenceStatus string `db:"sequence_status" json:"sequence_status"`
-	ListID         int    `db:"list_id" json:"list_id"`
-	Position       int    `db:"position" json:"position"`
-	TotalSteps     int    `db:"total_steps" json:"total_steps"`
+	StepID            int         `db:"step_id" json:"step_id"`
+	SkipLandingURL    null.String `db:"skip_landing_url" json:"skip_landing_url"`
+	DefaultLandingURL null.String `db:"default_skip_landing_url" json:"default_skip_landing_url"`
+	SequenceID        int         `db:"sequence_id" json:"sequence_id"`
+	SequenceName      string      `db:"sequence_name" json:"sequence_name"`
+	SequenceStatus    string      `db:"sequence_status" json:"sequence_status"`
+	ListID            int         `db:"list_id" json:"list_id"`
+	Position          int         `db:"position" json:"position"`
+	TotalSteps        int         `db:"total_steps" json:"total_steps"`
 }
 
 // StepOf returns the sequence step that owns the campaign, if any. Used by the
@@ -78,7 +81,8 @@ type StepRef struct {
 func (p *Plus) StepOf(campaignID int) (StepRef, bool) {
 	var r StepRef
 	err := p.db.Get(&r, `
-		SELECT sq.id AS sequence_id, sq.name AS sequence_name, sq.status AS sequence_status, sq.list_id,
+		SELECT st.id AS step_id, st.skip_landing_url, sq.default_skip_landing_url,
+		       sq.id AS sequence_id, sq.name AS sequence_name, sq.status AS sequence_status, sq.list_id,
 		       st.position, (SELECT COUNT(*) FROM plus_sequence_steps WHERE sequence_id = sq.id) AS total_steps
 		FROM plus_sequence_steps st JOIN plus_sequences sq ON sq.id = st.sequence_id
 		WHERE st.campaign_id = $1`, campaignID)

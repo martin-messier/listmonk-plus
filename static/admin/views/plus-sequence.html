@@ -69,6 +69,9 @@
 	.plus-delay { display: flex; gap: var(--space-2); }
 	.plus-delay input { max-width: 7rem; }
 	.plus-wait { text-align: center; color: var(--muted-foreground, inherit); opacity: .75; margin: calc(var(--space-2) * -1) 0 var(--space-3); font-size: .85em; }
+	.plus-step-name { flex: 1; min-width: 0; }
+	.plus-step-name input { width: 100%; max-width: 420px; }
+	.plus-step-name strong { font-size: 1.05em; }
 	.plus-step-msg { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap;
 	                 padding: var(--space-3); margin-bottom: var(--space-4); border-radius: var(--radius-medium, 8px); background: var(--muted, rgba(0,0,0,.04)); }
 	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
@@ -111,7 +114,7 @@
 	</p>
 	<ul class="text-light text-8">
 		<li><strong>Unsubscribe:</strong> Listmonk's <code>{{ "{{ UnsubscribeURL }}" }}</code> works as in any campaign (the default template already has it). It unsubscribes the person from this sequence's list.</li>
-		<li><strong>"Send me the next email now" (optional):</strong> <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>. Leave it out and the step just waits.</li>
+		<li><strong>"Send me the next email now" (optional):</strong> <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>. Leave it out and the step just waits. Where people land afterwards: the sequence's Settings, or the message's <strong>Next email</strong> tab.</li>
 	</ul>
 
 	<template x-for="(step, i) in steps" :key="step.id">
@@ -129,10 +132,24 @@
 					{{- end }}
 				</div>
 				<div class="plus-step-msg">
-					<div>
-						<div class="text-light text-8">Message</div>
-						<strong x-text="step.campaign_subject"></strong>
-						<div class="text-light text-8"><span x-text="step.campaign_name"></span> · <span x-text="step.sent"></span> sent</div>
+					<div class="plus-step-name">
+						<template x-if="!step.editingName">
+							<div class="hstack gap-2">
+								<strong x-text="step.campaign_name" data-testid="step-name"></strong>
+								{{- if $canManage }}
+								<button type="button" class="ghost small icon" title="Rename" aria-label="Rename" data-testid="btn-rename" @click="startRename(step)">{{ Icon "edit-2" }}</button>
+								{{- end }}
+							</div>
+						</template>
+						<template x-if="step.editingName">
+							<div class="hstack gap-2">
+								<input type="text" maxlength="2000" aria-label="Message name" data-testid="input-rename" x-model="step.nameDraft"
+									x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+									@keydown.enter.prevent="saveName(step)" @keydown.escape.prevent="step.editingName = false" />
+								<button type="button" class="small" data-variant="primary" data-testid="btn-rename-save" @click="saveName(step)" :disabled="isLoading('plus.rename') || !step.nameDraft.trim()">{{ .L.T "globals.buttons.save" }}</button>
+								<button type="button" class="ghost small" @click="step.editingName = false">{{ .L.T "globals.buttons.cancel" }}</button>
+							</div>
+						</template>
 					</div>
 					<a class="button outline small" :href="'{{ URI "/admin/campaigns" }}/' + step.campaign_id + '#tab=content'" data-testid="btn-edit-message">{{ Icon "edit-2" }} Edit message</a>
 				</div>
@@ -157,9 +174,9 @@
 		</div>
 		<div class="plus-step-grid">
 			<label data-field>
-				Subject
-				<input type="text" maxlength="5000" x-model="newStep.subject" placeholder="{{ $s.Name }}" />
-				<small data-hint>You can change it, and everything else, on the message's campaign screen.</small>
+				Message name (optional)
+				<input type="text" maxlength="2000" x-model="newStep.name" :placeholder="'{{ $s.Name }} · Step ' + (steps.length + 1)" data-testid="input-new-name" />
+				<small data-hint>Also used as the first subject; you can change the subject and everything else on the message's campaign screen.</small>
 			</label>
 		</div>
 		{{ template "plus-step-fields" dict "Root" . "Model" "newStep" }}
@@ -190,10 +207,6 @@
 		</div>
 		<small data-hint>0 = send immediately.</small>
 	</div>
-	<label data-field>
-		"Next email now" landing page (optional)
-		<input type="url" maxlength="2000" x-model="{{ $m }}.skip_landing_url" placeholder="https://… (default: a confirmation page)" />
-	</label>
 </div>
 {{- end }}
 
@@ -246,6 +259,12 @@
 				</select>
 				<small data-hint>"Comes back" means re-subscribing to the list, or being enrolled again.</small>
 			</div>
+
+			<label data-field>
+				Default "next email now" landing page (optional)
+				<input type="url" maxlength="2000" x-model="form.default_skip_landing_url" placeholder="https://…" data-testid="input-default-landing" />
+				<small data-hint>Where people go after pressing "send me the next email now" (<code>{{ "{{ SequenceNextURL }}" }}</code>). A message can override it in its <strong>Next email</strong> tab. Empty: a simple confirmation page.</small>
+			</label>
 
 			<label data-field>
 				Default From address for new steps (optional)

@@ -510,6 +510,43 @@ def main():
     except HTTPError as e:
         check("53 can't delete an active sequence", e.code == 400, e)
 
+    # --- message names and "next email now" landing pages ------------------------------------------------------
+    # (the "broken" list is free again after test 52)
+    lseq = make_seq("Landing", broken["id"], trigger_enabled=False,
+                    default_skip_landing_url="https://example.com/default-" + RUN)
+    st1 = http("POST", "/api/plus/sequences/{}/steps".format(lseq["id"]), {"delay": "0", "name": "Welcome email " + RUN})["data"]["steps"][0]
+    add_step(lseq["id"], "1 hour", "Landing 2 " + RUN)
+    add_step(lseq["id"], "1 hour", "Landing 3 " + RUN)
+    c_st1 = http("GET", "/api/campaigns/{}".format(st1["campaign_id"]))["data"]
+    check("56 a step added with a name: campaign named and subject defaulted to it",
+          c_st1["name"] == "Welcome email " + RUN and c_st1["subject"] == "Welcome email " + RUN, (c_st1["name"], c_st1["subject"]))
+    seqL = http("PUT", "/api/plus/sequences/{}/steps/{}".format(lseq["id"], st1["id"]), {"name": "Hello there " + RUN})["data"]
+    check("57 renaming a step's message from the sequence renames its campaign",
+          seqL["steps"][0]["campaign_name"] == "Hello there " + RUN, seqL["steps"][0]["campaign_name"])
+    http("PUT", "/api/plus/sequences/{}".format(lseq["id"]), {"name": "Landing renamed " + RUN})
+    nm = [x["campaign_name"] for x in http("GET", "/api/plus/sequences/{}".format(lseq["id"]))["data"]["steps"]]
+    check("58 renaming the sequence keeps a hand-picked message name",
+          nm[0] == "Hello there " + RUN and nm[1] == "Landing renamed {} · Step 2".format(RUN), nm)
+    try:
+        http("PUT", "/api/plus/sequences/{}/steps/{}".format(lseq["id"], st1["id"]), {"skip_landing_url": "not a url"})
+        check("59 invalid landing page rejected", False)
+    except HTTPError as e:
+        check("59 invalid landing page rejected", e.code == 400, e)
+    http("PUT", "/api/plus/sequences/{}/steps/{}".format(lseq["id"], st1["id"]), {"skip_landing_url": "https://example.com/step-" + RUN})
+    _, page, _ = http("GET", "/admin/campaigns/{}".format(st1["campaign_id"]), raw=True)
+    check("60 step campaign screen has a 'Next email' tab with the step's landing page",
+          'data-testid="tab-next-email"' in page and "https://example.com/step-" + RUN in page)
+    http("PUT", "/api/plus/sequences/{}".format(lseq["id"]), {"status": "active"})
+    http("POST", "/api/plus/sequences/{}/enrollments".format(lseq["id"]), {"subscriber_ids": [d4]})
+    m = wait_until(lambda: [x for x in mails(addr("d4")) if x[0] == "Welcome email " + RUN])
+    code, _, loc = http("POST", path_of(next_url(m[0][1]) if m else None), auth=False, follow=False)
+    check("61 'next email now' goes to the step's own landing page when set",
+          code == 303 and loc == "https://example.com/step-" + RUN, (code, loc))
+    m = wait_until(lambda: [x for x in mails(addr("d4")) if x[0] == "Landing 2 " + RUN])
+    code, _, loc = http("POST", path_of(next_url(m[0][1]) if m else None), auth=False, follow=False)
+    check("62 ...otherwise to the sequence's default landing page",
+          code == 303 and loc == "https://example.com/default-" + RUN, (code, loc))
+
 
 
 try:

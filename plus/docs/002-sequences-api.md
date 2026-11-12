@@ -9,7 +9,7 @@ as `{"data": ...}`; errors as `{"message": "..."}` with 400 / 404 / 409.
 | Method | Path | Body / notes |
 |---|---|---|
 | GET | `/api/plus/sequences` | All sequences, with `stats` (enrollment counts by status) |
-| POST | `/api/plus/sequences` | `{name, list_id, trigger_enabled?, reentry_after_exit?, reentry_while_active?, from_email?}` → created as `draft` |
+| POST | `/api/plus/sequences` | `{name, list_id, trigger_enabled?, reentry_after_exit?, reentry_while_active?, from_email?, default_skip_landing_url?}` → created as `draft` |
 | GET | `/api/plus/sequences/:id` | Sequence with `steps` |
 | PUT | `/api/plus/sequences/:id` | Any of the fields above + `status`. Rules below. |
 | DELETE | `/api/plus/sequences/:id` | Not while `active` (pause first). Deletes its history too. |
@@ -33,15 +33,16 @@ handles timing and order.
 
 | Method | Path | Body / notes |
 |---|---|---|
-| POST | `/api/plus/sequences/:id/steps` | `{delay, subject?, name?, skip_landing_url?, position?}`. Creates a draft campaign on the sequence's list with Listmonk's default template (`subject` defaults to the sequence name, `name` to "<sequence> · Step N"). While `active`: append only. |
-| PUT | `/api/plus/sequences/:id/steps/:stepID` | `delay`, `skip_landing_url`, `position` (reorder only while not `active`). |
+| POST | `/api/plus/sequences/:id/steps` | `{delay, name?, subject?, skip_landing_url?, position?}`. Creates a draft campaign on the sequence's list with Listmonk's default template (`name` defaults to "<sequence> · Step N"; `subject` to the name given, else the sequence name). While `active`: append only. |
+| PUT | `/api/plus/sequences/:id/steps/:stepID` | `delay`, `name` (renames the message/campaign), `skip_landing_url`, `position` (reorder only while not `active`). |
 | DELETE | `/api/plus/sequences/:id/steps/:stepID` | Only while not `active`; deletes the step's campaign (and its stats); later steps move up. |
 
 - `delay`: wait after the previous step (step 1: after enrollment). Postgres interval text:
   `"0"`, `"10 minutes"`, `"2 hours"`, `"3 days"`, `"1 day 12 hours"`. Returned as `delay` and `delay_seconds`.
 - Step responses include `campaign_id`, `campaign_uuid`, `campaign_name`, `campaign_subject`, `content_type`, `sent`.
-- `skip_landing_url`: where people land after pressing "send me the next email now" in **this
-  step's** email. Empty = a built-in confirmation page.
+- Landing page after "send me the next email now": the step's `skip_landing_url` if set, else the
+  sequence's `default_skip_landing_url`, else a built-in confirmation page. In the admin, the step's
+  value is edited in the **Next email** tab of its campaign screen, the default in the sequence's Settings.
 
 ### Step campaigns in Listmonk's campaign API
 

@@ -25,7 +25,7 @@ All hooks are marked in code with a `listmonk-plus` comment: `git grep -n "listm
 | 15 | `cmd/campaigns.go` `UpdateCampaignStatus`, `DeleteCampaign` | `if st, ok := a.plus.StepOf(id); ok { return st.StepGuardError(...) }` | A step campaign can never be started/scheduled/paused/cancelled or deleted directly | M5 |
 | 16 | `cmd/campaigns.go` `UpdateCampaign` | Force `ListIDs` to the sequence's list, clear `SendAt` | A step campaign always targets the sequence's list and is never scheduled | M5 |
 | 17 | `cmd/campaigns.go` `campaignView` struct + `ViewCampaign` (+ import) | `PlusStep *plus.StepRef`, set from `a.plus.StepOf`; page ID `sequences.all` | Lets the campaign screen recognise a step | M5 |
-| 18 | `static/admin/views/campaign.html` | Breadcrumb to the sequence, "Sequence step N of M" badge, banner, `$canSend = false` for steps (hides Start/Schedule) | Native campaign screen for step messages | M5 |
+| 18 | `static/admin/views/campaign.html` | Breadcrumb to the sequence, "Sequence step N of M" badge, banner, `$canSend = false` for steps (hides Start/Schedule), extra **Next email** tab + panel (`plus-step-next-tab` partial) after Archive | Native campaign screen for step messages | M5 |
 | 19 | `static/admin/partials/campaign-form.html` | Lists selector disabled + hint for steps; Schedule card hidden for steps | Same | M5 |
 | 20 | `static/admin/assets/js/main.js` `listenErrorEvents()` | Open the `/api/events` stream only once the page is shown (not while pre-rendered), close it on `pagehide`, reopen on `pageshow` | **Upstream bug**: the stream was never closed, so browsers that keep left pages alive or pre-render links (seen with Dia) piled up open streams and hit the ~6 connections/host limit of HTTP/1.1, stalling every click. Worth proposing upstream. Not an issue over HTTP/2 (HTTPS behind Caddy) | M5 |
 
@@ -38,6 +38,7 @@ points from `static/admin/assets/js/views/*.js`, and `cmd/plus_views.go` uses `a
 
 - `cmd/plus_views.go`
 - `static/admin/views/plus-sequences.html`, `static/admin/views/plus-sequence.html`, `static/admin/views/plus-analytics.html`
+- `static/admin/partials/plus-step-next-tab.html` (the campaign screen's Next email tab; relies on `ot-tabs` pairing tabs and panels by position)
 - `static/admin/assets/js/views/plus-sequences.js` (imports `api`, `urls` from `main.js` and `utils.js`)
 
 ## Database objects on upstream tables

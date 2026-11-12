@@ -19,7 +19,7 @@ import (
 const seqSelect = `
 SELECT s.id, s.uuid, s.name, s.status, s.list_id, l.name AS list_name, l.optin AS list_optin,
        s.trigger_enabled, s.reentry_after_exit, s.reentry_while_active, s.from_email,
-       s.created_at, s.updated_at,
+       s.default_skip_landing_url, s.created_at, s.updated_at,
        COALESCE((SELECT jsonb_object_agg(status, n) FROM
                    (SELECT status, COUNT(*) AS n FROM plus_enrollments
                     WHERE sequence_id = s.id GROUP BY status) x), '{}') AS stats,
@@ -54,6 +54,7 @@ type seqInput struct {
 	ReentryAfterExit   *string `json:"reentry_after_exit"`
 	ReentryWhileActive *string `json:"reentry_while_active"`
 	FromEmail          *string `json:"from_email"`
+	DefaultLandingURL  *string `json:"default_skip_landing_url"`
 }
 
 // stepInput is the create/update payload for a step.
@@ -62,9 +63,12 @@ type stepInput struct {
 	Delay          *string `json:"delay"`
 	SkipLandingURL *string `json:"skip_landing_url"`
 
-	// Only used when adding a step: the new campaign's name and subject.
-	// Defaults: "<sequence> · Step N" and the sequence's name.
-	Name    *string `json:"name"`
+	// The step's message (campaign) name. On add it defaults to
+	// "<sequence> · Step N"; on update it renames the campaign.
+	Name *string `json:"name"`
+
+	// Only used when adding a step: the new campaign's subject. Defaults to the
+	// name given, else the sequence's name.
 	Subject *string `json:"subject"`
 }
 
@@ -107,11 +111,12 @@ func (p *Plus) createSequence(in seqInput) (Sequence, error) {
 
 	var id int
 	err := p.db.Get(&id, `
-		INSERT INTO plus_sequences (name, list_id, trigger_enabled, reentry_after_exit, reentry_while_active, from_email)
-		VALUES ($1, $2, COALESCE($3, true), COALESCE($4, 'ignore'), COALESCE($5, 'continue'), NULLIF($6, ''))
+		INSERT INTO plus_sequences (name, list_id, trigger_enabled, reentry_after_exit, reentry_while_active, from_email,
+		                            default_skip_landing_url)
+		VALUES ($1, $2, COALESCE($3, true), COALESCE($4, 'ignore'), COALESCE($5, 'continue'), NULLIF($6, ''), NULLIF(TRIM($7), ''))
 		RETURNING id`,
 		strings.TrimSpace(*in.Name), *in.ListID, in.TriggerEnabled, in.ReentryAfterExit, in.ReentryWhileActive,
-		null.StringFromPtr(in.FromEmail))
+		null.StringFromPtr(in.FromEmail), null.StringFromPtr(in.DefaultLandingURL))
 	if err != nil {
 		return Sequence{}, p.dbErr(err, *in.ListID)
 	}
@@ -156,10 +161,12 @@ func (p *Plus) updateSequence(id int, in seqInput) (Sequence, error) {
 		    reentry_after_exit   = COALESCE($6, reentry_after_exit),
 		    reentry_while_active = COALESCE($7, reentry_while_active),
 		    from_email           = CASE WHEN $8::BOOL THEN NULLIF($9, '') ELSE from_email END,
+		    default_skip_landing_url = CASE WHEN $10::BOOL THEN NULLIF(TRIM($11), '') ELSE default_skip_landing_url END,
 		    updated_at           = NOW()
 		WHERE id = $1`,
 			id, in.Name, in.Status, in.ListID, in.TriggerEnabled, in.ReentryAfterExit, in.ReentryWhileActive,
-			in.FromEmail != nil, null.StringFromPtr(in.FromEmail))
+			in.FromEmail != nil, null.StringFromPtr(in.FromEmail),
+			in.DefaultLandingURL != nil, null.StringFromPtr(in.DefaultLandingURL))
 		if err != nil {
 			return err
 		}
@@ -225,7 +232,19 @@ func validateSeqInput(in seqInput) error {
 	if in.FromEmail != nil && len(*in.FromEmail) > 500 {
 		return errBad("from_email is too long")
 	}
+	if in.DefaultLandingURL != nil && !validLandingURL(*in.DefaultLandingURL) {
+		return errBad("the default landing page must be a full http(s) URL")
+	}
 	return nil
+}
+
+// validLandingURL accepts an empty string (= not set) or a full http(s) URL.
+func validLandingURL(v string) bool {
+	if strings.TrimSpace(v) == "" {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(v))
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // dbErr turns known constraint violations into friendly errors.
@@ -263,11 +282,11 @@ func (p *Plus) validateStep(in stepInput, requireDelay bool) error {
 			return errBad("delay can't be negative")
 		}
 	}
-	if in.SkipLandingURL != nil && *in.SkipLandingURL != "" {
-		u, err := url.Parse(*in.SkipLandingURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return errBad("skip_landing_url must be a full http(s) URL")
-		}
+	if in.SkipLandingURL != nil && !validLandingURL(*in.SkipLandingURL) {
+		return errBad("the landing page must be a full http(s) URL")
+	}
+	if in.Name != nil && (strings.TrimSpace(*in.Name) == "" || len(*in.Name) > 2000) {
+		return errBad("the message name can't be empty")
 	}
 	return nil
 }
@@ -302,6 +321,9 @@ func (p *Plus) addStep(seqID int, in stepInput) (Sequence, error) {
 		name = strings.TrimSpace(*in.Name)
 	}
 	subject := seq.Name
+	if in.Name != nil && strings.TrimSpace(*in.Name) != "" {
+		subject = strings.TrimSpace(*in.Name)
+	}
 	if in.Subject != nil && strings.TrimSpace(*in.Subject) != "" {
 		subject = strings.TrimSpace(*in.Subject)
 	}
@@ -402,9 +424,17 @@ func (p *Plus) updateStep(seqID, stepID int, in stepInput) (Sequence, error) {
 			    updated_at       = NOW()
 			WHERE id = $1`,
 			stepID, null.StringFromPtr(trimPtr(in.Delay)),
-			in.SkipLandingURL != nil, null.StringFromPtr(in.SkipLandingURL))
+			in.SkipLandingURL != nil, null.StringFromPtr(trimPtr(in.SkipLandingURL)))
 		if err != nil {
 			return err
+		}
+		// Renaming the message renames its campaign. A name typed here no longer
+		// has the automatic "<sequence> · Step N" form, so it's kept from now on.
+		if in.Name != nil {
+			if _, err := tx.Exec(`UPDATE campaigns SET name = $2, updated_at = NOW() WHERE id = $1`,
+				cur.CampaignID, strings.TrimSpace(*in.Name)); err != nil {
+				return err
+			}
 		}
 		return syncStepNames(tx, seqID, seq.Name)
 	})

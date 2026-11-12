@@ -91,7 +91,8 @@ func (p *Plus) loadNextState(campUUID, subUUID string) (nextState, string, error
 	}
 	err := p.db.Get(&s, `
 		SELECT sd.id AS send_id, e.id AS enrollment_id, e.status AS enr_status, e.next_step,
-		       sq.status AS seq_status, st.position, st.skip_landing_url,
+		       sq.status AS seq_status, st.position,
+		       COALESCE(NULLIF(st.skip_landing_url, ''), sq.default_skip_landing_url) AS skip_landing_url,
 		       (SELECT COUNT(*) FROM plus_sequence_steps WHERE sequence_id = e.sequence_id) AS total_steps,
 		       e.subscriber_id, e.sequence_id
 		FROM plus_sequence_steps st
