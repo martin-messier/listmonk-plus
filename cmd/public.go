@@ -883,9 +883,13 @@ func (a *App) processSubForm(c *echo.Context) (bool, error) {
 			return false, err
 		}
 
+		// listmonk-plus: note which of these lists they're already subscribed to.
+		plusRepeat := a.plus.ActiveListIDs(sub.ID, req.FormListUUIDs)
+
 		// Update the subscriber's subscriptions in the DB.
 		_, hasOptin, err := a.core.UpdateSubscriberWithLists(sub.ID, sub, nil, listUUIDs, false, false, true, nil, true)
 		if err == nil {
+			a.plus.RecordRepeated(sub.ID, plusRepeat, c.Path()) // listmonk-plus
 			return hasOptin, nil
 		}
 		lastErr = err

@@ -92,7 +92,8 @@ var regTplFuncs = []regTplFunc{
 	},
 
 	{
-		regExp:  regexp.MustCompile(`{{(\s+)?(TrackView|UnsubscribeURL|ManageURL|OptinURL|MessageURL)(\s+)?}}`),
+		// listmonk-plus: SequenceNextURL added to the list.
+		regExp:  regexp.MustCompile(`{{(\s+)?(TrackView|UnsubscribeURL|ManageURL|OptinURL|MessageURL|SequenceNextURL)(\s+)?}}`),
 		replace: `{{ $2 . }}`,
 	},
 }

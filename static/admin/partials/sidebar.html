@@ -63,6 +63,22 @@
 		</li>
 		{{- end }}
 
+		{{- /* listmonk-plus: sequences menu. */}}
+		{{- if Can $u "sequences:get" "sequences:manage" }}
+		<li>
+			<details {{ ExpandNav $p "sequences" }} name="sidebar-nav">
+				<summary>{{ Icon "mail" }} Sequences</summary>
+				<ul>
+					<li><a href="{{ URI "/admin/plus/sequences" }}" {{ IsNav $p "sequences.all" }}>All sequences</a></li>
+					<li><a href="{{ URI "/admin/plus/sequences/analytics" }}" {{ IsNav $p "sequences.analytics" }}>{{ .L.T "globals.terms.analytics" }}</a></li>
+					{{- if Can $u "sequences:manage" }}
+					<li><a href="{{ URI "/admin/plus/sequences/new" }}" {{ IsNav $p "sequences.new" }}>{{ .L.T "globals.buttons.createNew" }}</a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
 		{{- if Can $u "users:get" "users:manage" "roles:get" "roles:manage" }}
 		<li>
 			<details {{ ExpandNav $p "users" }} name="sidebar-nav">

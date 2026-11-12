@@ -2,7 +2,20 @@
 SELECT data FROM mat_dashboard_charts;
 
 -- name: get-dashboard-counts
-SELECT data FROM mat_dashboard_counts;
+-- listmonk-plus: sequence step campaigns (and their messages) are only shown under
+-- Sequences, so they're subtracted from the campaign counts here rather than by
+-- changing mat_dashboard_counts (which upstream migrations recreate).
+WITH st AS (
+    SELECT COUNT(*) AS n, COALESCE(SUM(c.sent), 0) AS sent
+    FROM plus_sequence_steps ps JOIN campaigns c ON c.id = ps.campaign_id
+)
+SELECT CASE WHEN st.n = 0 THEN data::JSONB ELSE
+    JSONB_SET(JSONB_SET(JSONB_SET(data::JSONB,
+        '{campaigns,total}', TO_JSONB(GREATEST(0, COALESCE((data->'campaigns'->>'total')::INT, 0) - st.n))),
+        '{campaigns,by_status,draft}', TO_JSONB(GREATEST(0, COALESCE((data->'campaigns'->'by_status'->>'draft')::INT, 0) - st.n))),
+        '{messages}', TO_JSONB(GREATEST(0, COALESCE((data->>'messages')::BIGINT, 0) - st.sent)))
+    END AS data
+FROM mat_dashboard_counts, st;
 
 -- name: get-settings
 SELECT JSON_OBJECT_AGG(key, value) AS settings FROM (SELECT * FROM settings ORDER BY key) t;

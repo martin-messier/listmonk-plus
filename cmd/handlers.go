@@ -141,6 +141,10 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 			})
 		)
 
+		// listmonk-plus: sequences admin API and pages.
+		a.plus.RegisterAPI(g, pm)
+		a.registerPlusViews(g, pm)
+
 		// API endpoints.
 		g.GET("/api/health", a.HealthCheck)
 		g.GET("/api/config", a.GetServerConfig)
@@ -340,6 +344,9 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		// Public health API endpoint.
 		g.GET("/health", a.HealthCheck)
 		g.GET("/robots.txt", a.RobotsTxt)
+
+		// listmonk-plus: public sequence pages ("send me the next email now").
+		a.plus.RegisterPublic(g)
 
 		// 404 pages.
 		g.RouteNotFound("/*", func(c *echo.Context) error {

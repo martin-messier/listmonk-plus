@@ -2,12 +2,18 @@
 {{ template "admin-header" . }}
 {{- $crumbTitle := .L.T "campaigns.newCampaign" -}}
 {{- if not .Data.IsNew }}{{ $crumbTitle = .Data.Campaign.Name }}{{ end -}}
+{{- /* listmonk-plus: a sequence step's message lives under its sequence and is never broadcast from here. */ -}}
+{{- with .Data.PlusStep }}
+{{ template "breadcrumbs" dict "Root" $ "Current" $crumbTitle "Parents" (list (dict "Label" "Sequences" "URL" (URI "/admin/plus/sequences") "CanLink" true) (dict "Label" .SequenceName "URL" (printf "%s/%d" (URI "/admin/plus/sequences") .SequenceID) "CanLink" true)) }}
+{{- else }}
 {{ template "breadcrumbs" dict "Root" . "Current" $crumbTitle "Parents" (list (dict "Label" (.L.T "globals.terms.campaigns") "URL" (URI "/admin/campaigns") "CanLink" (.Data.Can "campaigns:get" "campaigns:get_all"))) }}
+{{- end }}
 {{- $d := .Data -}}
 {{- $c := $d.Campaign -}}
 {{- $isNew := $d.IsNew -}}
 {{- $canManage := $d.Can "campaigns:manage" "campaigns:manage_all" -}}
 {{- $canSend := $d.Can "campaigns:send" -}}
+{{- if $d.PlusStep }}{{ $canSend = false }}{{ end -}}
 
 <script>
 	window._lists = {{ ToJSON $d.AllLists }};
@@ -32,7 +38,9 @@
 						{{- else }}{{ $c.Name }}{{ end }}
 					</h1>
 				</div>
-				{{- if not $isNew }}
+				{{- if $d.PlusStep }}
+					{{ Badge (list (Icon "mail") (printf "Sequence step %d of %d" $d.PlusStep.Position $d.PlusStep.TotalSteps)) "enum status-running" }}
+				{{- else if not $isNew }}
 					{{ Badge (list (Dot) (.L.T (printf "globals.terms.%s" $c.Status))) (printf "enum status-%s" $c.Status) }}
 					{{- if eq $c.Type "optin" }}{{ Badge (.L.T "lists.optin") "enum optin" }}{{ end }}
 				{{- end }}
@@ -64,6 +72,15 @@
 		{{- end }}
 	</header>
 
+	{{- with $d.PlusStep }}
+		<p class="plus-step-banner" data-testid="plus-step-banner">{{ Icon "info" }}
+			This is <strong>step {{ .Position }} of the sequence <a href="{{ URI "/admin/plus/sequences" }}/{{ .SequenceID }}">{{ .SequenceName }}</a></strong>.
+			It's sent automatically to each person when they reach this step, so it can't be started or scheduled here.
+			Edit its content, attachments and settings as usual; set its timing in the sequence.
+		</p>
+		<style>.plus-step-banner { margin: 0 0 var(--space-4); } .plus-step-banner svg { vertical-align: -0.15em; margin-right: var(--space-1); }</style>
+	{{- end }}
+
 	{{- if $isNew }}
 		<div role="tablist" data-variant="primary">
 			<a role="tab" aria-selected="true">{{ Icon "mail" }} {{ .L.Tc "globals.terms.campaign" 1 }}</a>
@@ -83,6 +100,8 @@
 				<button type="button" role="tab" id="attribs">{{ Icon "code" }} {{ .L.T "globals.terms.attribs" }} <span x-cloak x-show="form.attribsStr.trim() !== '' && form.attribsStr.trim() !== '{}'">{{ Icon "check-circle" }}</span></button>
 				<button type="button" role="tab" id="attachments">{{ Icon "paperclip" }} {{ .L.T "globals.terms.attachments" }} <span x-cloak x-show="form.media.length" x-text="`(${form.media.length})`"></span></button>
 				<button type="button" role="tab" id="archive">{{ Icon "archive" }} {{ .L.T "globals.terms.archive" }} <span x-cloak x-show="form.archive">{{ Icon "check-circle" }}</span></button>
+				{{- /* listmonk-plus: sequence step settings. */}}
+				{{- if $d.PlusStep }}<button type="button" role="tab" id="next-email" data-testid="tab-next-email">{{ Icon "clock" }} Next email</button>{{ end }}
 			</div>
 
 			<ot-dropdown class="content-settings" x-cloak x-show="activeTab === 'content'">
@@ -137,6 +156,7 @@
 			<div role="tabpanel">{{ template "campaign-attribs" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
 			<div role="tabpanel">{{ template "campaign-attachments" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
 			<div role="tabpanel">{{ template "campaign-archive" dict "Root" . "CanManage" $canManage "CanSend" $canSend }}</div>
+			{{- with $d.PlusStep }}{{ template "plus-step-next-tab" dict "Root" $ "Step" . }}{{ end }}
 		</ot-tabs>
 	{{- end }}
 

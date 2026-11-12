@@ -81,6 +81,8 @@ WHERE ($1 = 0 OR id = $1)
             SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($7::INT[])
         )
     )
+    -- listmonk-plus: sequence step campaigns are only shown under their sequence.
+    AND NOT EXISTS (SELECT 1 FROM plus_sequence_steps ps WHERE ps.campaign_id = c.id)
 ORDER BY %order% OFFSET $8 LIMIT (CASE WHEN $9 < 1 THEN NULL ELSE $9 END);
 
 -- name: get-campaign
@@ -472,7 +474,10 @@ AND (
     $3 OR EXISTS (
         SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($4::INT[])
     )
-);
+)
+-- listmonk-plus: sequence step campaigns are only shown under their sequence.
+AND NOT EXISTS (SELECT 1 FROM plus_sequence_steps ps WHERE ps.campaign_id = c.id)
+;
 
 -- name: register-campaign-view
 WITH view AS (
@@ -488,6 +493,8 @@ SELECT id, name, sent FROM campaigns c
 WHERE id = ANY($1::INT[]) AND ($2 OR EXISTS (
     SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($3::INT[])
 ))
+-- listmonk-plus: sequence step campaigns are only shown under their sequence.
+AND NOT EXISTS (SELECT 1 FROM plus_sequence_steps ps WHERE ps.campaign_id = c.id)
 ORDER BY ARRAY_POSITION($1::INT[], id);
 
 

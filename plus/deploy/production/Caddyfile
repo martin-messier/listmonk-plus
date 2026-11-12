@@ -1,0 +1,24 @@
+# listmonk-plus production. HTTPS certificates are obtained automatically.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Mailpit (caught emails), password-protected.
+	handle /mailpit* {
+		basic_auth {
+			{$MAILPIT_USER} {$MAILPIT_HASH}
+		}
+		reverse_proxy mailpit:8025
+	}
+
+	# Everything else: Listmonk.
+	handle {
+		reverse_proxy app:9000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

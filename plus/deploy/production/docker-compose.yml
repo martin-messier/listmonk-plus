@@ -1,0 +1,96 @@
+# listmonk-plus production stack. Run via plus/deploy/production/deploy.sh, which
+# passes --env-file /srv/listmonk-plus/.env (secrets live outside the repo).
+#
+# Only Caddy publishes ports. Docker bypasses the host firewall (ufw) for
+# published ports, so nothing else may use `ports:`.
+
+name: listmonk-plus
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listmonk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: listmonk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listmonk -d listmonk"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - db-data:/var/lib/postgresql
+
+  app:
+    build:
+      context: ../../..
+      dockerfile: plus/deploy/Dockerfile
+      args:
+        VERSION: ${BUILD_VERSION:-v7.0.0-beta.2}
+        COMMIT: ${BUILD_COMMIT:-unknown}
+    image: listmonk-plus:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # --install --idempotent only installs into an empty DB (first start).
+    # --config '' = configure from the environment only. Beta builds run
+    # pending migrations automatically on start; plus migrations always do.
+    command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --config ''"]
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_db__host: db
+      LISTMONK_db__port: 5432
+      LISTMONK_db__user: listmonk
+      LISTMONK_db__password: ${POSTGRES_PASSWORD}
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__ssl_mode: disable
+      LISTMONK_db__max_open: 25
+      LISTMONK_db__max_idle: 25
+      LISTMONK_db__max_lifetime: 300s
+      LISTMONK_plus__worker_interval: 15s
+      # Only used on the very first start, to create the Super Admin.
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD}
+      TZ: Etc/UTC
+    volumes:
+      - uploads:/listmonk/uploads
+
+  # Catches every outgoing email until a real sending service is configured
+  # (then point Listmonk's SMTP settings at the provider and remove this service).
+  mailpit:
+    image: axllent/mailpit:v1.33
+    restart: unless-stopped
+    environment:
+      MP_WEBROOT: mailpit
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    volumes:
+      - mailpit-data:/data
+    command: ["--database", "/data/mailpit.db"]
+
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on: [app, mailpit]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set in .env}
+      MAILPIT_USER: ${MAILPIT_USER}
+      MAILPIT_HASH: ${MAILPIT_HASH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  uploads:
+  mailpit-data:
+  caddy-data:
+  caddy-config:

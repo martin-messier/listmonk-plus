@@ -1,0 +1,448 @@
+{{- /* listmonk-plus: sequence editor (steps / settings / activity) and new-sequence form. */ -}}
+{{ define "plus-sequence" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $s := $d.Sequence -}}
+{{- $base := URI "/admin/plus/sequences" -}}
+{{- $canManage := $d.Can "sequences:manage" -}}
+{{- $crumb := "New sequence" }}{{ if not $d.IsNew }}{{ $crumb = $s.Name }}{{ end -}}
+{{ template "breadcrumbs" dict "Root" . "Current" $crumb "Parents" (list (dict "Label" "Sequences" "URL" $base "CanLink" true)) }}
+
+<script>
+	const _plusSeq = {{ if $d.IsNew }}null{{ else }}{{ ToJSON $s }}{{ end }};
+	const _plusOpts = {{ ToJSON $d.Options }};
+</script>
+
+<section class="plus-sequence" x-data="plusSequence(_plusSeq, _plusOpts)">
+	<header class="hstack justify-between page-header">
+		<div class="hstack gap-3 page-heading">
+			<div class="avatar avatar-title">
+				{{- if not $d.IsNew }}{{ template "avatar-icon" dict "Kind" "sequence" "Name" $s.Name "Href" (printf "%s/%d" $base $s.ID) "Title" $s.Name }}{{ end }}
+				<h1 class="page-title avatar-label">{{ $crumb }}</h1>
+			</div>
+			{{- if not $d.IsNew }}{{ template "plus-seq-status" $s.Status }}{{ end }}
+		</div>
+		{{- if and (not $d.IsNew) $canManage }}
+		<div class="hstack justify-end buttons">
+			{{- if or (eq $s.Status "active") (eq $s.Status "paused") }}
+				<button type="button" class="outline" data-testid="btn-enroll" @click="openEnroll()">{{ Icon "user-check" }} Enroll people</button>
+			{{- end }}
+			{{- if eq $s.Status "active" }}
+				<button type="button" class="outline" data-testid="btn-pause" @click="setStatus('paused')">{{ Icon "pause" }} Pause</button>
+			{{- else }}
+				<button type="button" data-variant="primary" data-testid="btn-activate" @click="setStatus('active')" :disabled="isLoading('plus.status')">{{ Icon "check-circle" }} Activate</button>
+			{{- end }}
+		</div>
+		{{- end }}
+	</header>
+
+	{{- if not $d.IsNew }}
+		{{- if eq $s.Status "draft" }}
+			<p class="plus-notice text-light">{{ Icon "info" }} This sequence is a <strong>draft</strong>: nothing is sent. Add steps, then press <strong>Activate</strong>.</p>
+		{{- else if eq $s.Status "paused" }}
+			<p class="plus-notice text-light">{{ Icon "pause-circle" }} This sequence is <strong>paused</strong>: people stay where they are and nothing is sent. While paused you can reorder and delete steps. Emails that became due are sent when you activate it again.</p>
+		{{- end }}
+
+		<div role="tablist" data-variant="primary">
+			<a role="tab" href="{{ $base }}/{{ $s.ID }}" {{ if eq $d.Tab "steps" }}aria-selected="true"{{ end }}>{{ Icon "list" }} Steps ({{ len $s.Steps }})</a>
+			<a role="tab" href="{{ $base }}/{{ $s.ID }}/settings" {{ if eq $d.Tab "settings" }}aria-selected="true"{{ end }}>{{ Icon "settings" }} {{ .L.T "globals.terms.settings" }}</a>
+			<a role="tab" href="{{ $base }}/{{ $s.ID }}/activity" {{ if eq $d.Tab "activity" }}aria-selected="true"{{ end }}>{{ Icon "activity" }} Activity</a>
+		</div>
+	{{- end }}
+
+	{{- if eq $d.Tab "steps" }}{{ template "plus-seq-steps" . }}{{ end }}
+	{{- if eq $d.Tab "settings" }}{{ template "plus-seq-settings" . }}{{ end }}
+	{{- if eq $d.Tab "activity" }}{{ template "plus-seq-activity" . }}{{ end }}
+
+	{{- if and (not $d.IsNew) $canManage }}{{ template "plus-seq-enroll-dialog" . }}{{ end }}
+</section>
+
+<style>
+	/* Listmonk v7's .page-heading is overflow:auto and its content is 1px too tall,
+	   which shows a stray scrollbar when scroll bars are always visible. */
+	.plus-sequence .page-heading { overflow: visible; }
+	.plus-sequence .plus-notice { margin: 0 0 var(--space-4); }
+	.plus-sequence .plus-notice svg { vertical-align: -0.15em; margin-right: var(--space-1); }
+	.plus-step { margin-bottom: var(--space-4); }
+	.plus-step-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+	.plus-step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3) var(--space-4); }
+	.plus-delay { display: flex; gap: var(--space-2); }
+	.plus-delay input { max-width: 7rem; }
+	.plus-wait { text-align: center; color: var(--muted-foreground, inherit); opacity: .75; margin: calc(var(--space-2) * -1) 0 var(--space-3); font-size: .85em; }
+	.plus-step-head { flex-wrap: wrap; }
+	.plus-step-title { display: flex; align-items: baseline; gap: var(--space-2); flex: 1 1 260px; min-width: 0; flex-wrap: wrap; }
+	.plus-step-title h3 { white-space: nowrap; }
+	.plus-step-name { min-width: 0; align-items: center; }
+	.plus-step-name h3 { overflow-wrap: anywhere; }
+	.plus-step-name input { width: min(360px, 60vw); }
+	.plus-step-actions { flex: none; margin-left: auto; }
+	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
+	.plus-stats a { text-decoration: none; }
+	.plus-enroll-dialog { width: min(560px, calc(100vw - 32px)); max-width: none; overflow-x: hidden; }
+	.plus-enroll-dialog .dialog-card { width: 100%; box-sizing: border-box; }
+	.plus-enroll-dialog .plus-check { display: flex; flex-direction: row; flex-wrap: nowrap; gap: var(--space-2); align-items: flex-start; }
+	.plus-enroll-dialog .plus-check span { flex: 1; min-width: 0; }
+	.plus-enroll-dialog .plus-modes { display: flex; flex-direction: column; gap: var(--space-2); }
+	.plus-enroll-dialog .plus-check input { flex: none; margin-top: .2em; }
+	.plus-pick, .plus-pick-bar, .plus-pick-bar input { box-sizing: border-box; max-width: 100%; }
+	.plus-pick-row span { overflow-wrap: anywhere; }
+	.plus-pick { border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: var(--radius-medium, 8px); padding: var(--space-3); margin-bottom: var(--space-3); }
+	.plus-pick-bar input { width: 100%; }
+	.plus-pick-all { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-3) 0 var(--space-2); font-size: .9em; }
+	.plus-pick-list { max-height: 280px; overflow-y: auto; }
+	.plus-pick-row { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-1) 0; cursor: pointer; }
+	.plus-pick-foot { margin-top: var(--space-2); align-items: center; }
+	.plus-enroll-result dl { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-3) 0 0; }
+	.plus-enroll-result dt { font-weight: 600; text-align: right; }
+	.plus-enroll-result dd { margin: 0; }
+</style>
+
+{{ template "plus-avatar-style" }}
+<script type="module" src="{{ URI "/admin/static/js/views/plus-sequences.js" }}?v={{ .AssetVersion }}" defer></script>
+{{ template "admin-footer" . -}}
+{{ end }}
+
+
+{{- /* ===================== Steps tab ===================== */ -}}
+{{ define "plus-seq-steps" -}}
+{{- $d := .Data -}}
+{{- $s := $d.Sequence -}}
+{{- $canManage := $d.Can "sequences:manage" -}}
+<div class="page-content content">
+	<p class="text-light text-8">
+		Each step is a <strong>campaign message</strong>, edited on Listmonk's normal campaign screen (content, attachments, archive…),
+		but sent automatically to each person when they reach it. A step waits the given time <em>after the previous email was sent</em>
+		(step 1: after the person enters the sequence). Opens and clicks are tracked per step under <a href="{{ URI "/admin/plus/sequences/analytics" }}">Sequences → Analytics</a>.
+	</p>
+	<ul class="text-light text-8">
+		<li><strong>Unsubscribe:</strong> Listmonk's <code>{{ "{{ UnsubscribeURL }}" }}</code> works as in any campaign (the default template already has it). It unsubscribes the person from this sequence's list.</li>
+		<li><strong>"Send me the next email now" (optional):</strong> <code>&lt;a href="{{ "{{ SequenceNextURL }}" }}"&gt;Get the next email now&lt;/a&gt;</code>. Leave it out and the step just waits. Where people land afterwards: the sequence's Settings, or the message's <strong>Next email</strong> tab.</li>
+	</ul>
+
+	<template x-for="(step, i) in steps" :key="step.id">
+		<div>
+			<div class="plus-wait" x-show="i > 0">{{ Icon "clock" }} <span x-text="waitLabel(step)"></span></div>
+			<form class="card plus-step" @submit.prevent="saveStep(step)" :data-testid="'step-' + step.position">
+				<div class="plus-step-head">
+					<div class="plus-step-title">
+						<h3 class="m-0" x-text="'Step ' + step.position + ' -'"></h3>
+						<template x-if="!step.editingName">
+							<div class="hstack gap-2 plus-step-name">
+								<h3 class="m-0" x-text="step.campaign_name" data-testid="step-name"></h3>
+								{{- if $canManage }}
+								<button type="button" class="ghost small icon" title="Rename" aria-label="Rename" data-testid="btn-rename" @click="startRename(step)">{{ Icon "edit-2" }}</button>
+								{{- end }}
+							</div>
+						</template>
+						<template x-if="step.editingName">
+							<div class="hstack gap-2 plus-step-name">
+								<input type="text" maxlength="2000" aria-label="Message name" data-testid="input-rename" x-model="step.nameDraft"
+									x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+									@keydown.enter.prevent="saveName(step)" @keydown.escape.prevent="step.editingName = false" />
+								<button type="button" class="small" data-variant="primary" data-testid="btn-rename-save" @click="saveName(step)" :disabled="isLoading('plus.rename') || !step.nameDraft.trim()">{{ .L.T "globals.buttons.save" }}</button>
+								<button type="button" class="ghost small" @click="step.editingName = false">{{ .L.T "globals.buttons.cancel" }}</button>
+							</div>
+						</template>
+					</div>
+					<div class="hstack gap-2 plus-step-actions">
+						{{- if $canManage }}
+						<button type="button" class="ghost small icon" title="Move up" aria-label="Move up" :disabled="isActive || i === 0" @click="moveStep(step, -1)">{{ Icon "arrow-up" }}</button>
+						<button type="button" class="ghost small icon" title="Move down" aria-label="Move down" :disabled="isActive || i === steps.length - 1" @click="moveStep(step, 1)">{{ Icon "arrow-down" }}</button>
+						{{- end }}
+						<a class="button outline small" :href="'{{ URI "/admin/campaigns" }}/' + step.campaign_id + '#tab=content'" data-testid="btn-edit-message">{{ Icon "edit-2" }} Edit message</a>
+						{{- if $canManage }}
+						<button type="button" class="ghost small icon" data-variant="danger" title="{{ .L.T "globals.buttons.delete" }}" aria-label="{{ .L.T "globals.buttons.delete" }}" :disabled="isActive" @click="deleteStep(step)">{{ Icon "trash-2" }}</button>
+						{{- end }}
+					</div>
+				</div>
+				{{ template "plus-step-fields" dict "Root" . "Model" "step" }}
+				{{- if $canManage }}
+				<footer class="hstack justify-end mt-4">
+					<button type="submit" class="small" data-variant="primary" :disabled="isLoading('plus.step')">{{ .L.T "globals.buttons.save" }}</button>
+				</footer>
+				{{- end }}
+			</form>
+		</div>
+	</template>
+
+	<template x-if="steps.length === 0">
+		<div class="card empty-state">{{ Icon "mail" }}<p>No steps yet. Add the first message below.</p></div>
+	</template>
+
+	{{- if $canManage }}
+	<form class="card plus-step" @submit.prevent="addStep()" data-testid="new-step">
+		<div class="plus-step-head">
+			<h3 class="m-0">{{ Icon "plus" }} Add step <span x-text="steps.length + 1"></span></h3>
+		</div>
+		<div class="plus-step-grid">
+			<label data-field>
+				Message name (optional)
+				<input type="text" maxlength="2000" x-model="newStep.name" :placeholder="'{{ $s.Name }} · Step ' + (steps.length + 1)" data-testid="input-new-name" />
+				<small data-hint>Also used as the first subject; you can change the subject and everything else on the message's campaign screen.</small>
+			</label>
+		</div>
+		{{ template "plus-step-fields" dict "Root" . "Model" "newStep" }}
+		<footer class="hstack justify-end mt-4">
+			<button type="submit" data-variant="primary" :disabled="isLoading('plus.step')">{{ Icon "plus" }} Add step</button>
+		</footer>
+	</form>
+	{{- if eq $s.Status "active" }}
+		<p class="text-light text-8">While the sequence is active, new steps are added at the end, and steps can't be reordered or deleted. Pause it to make those changes.</p>
+	{{- end }}
+	{{- end }}
+</div>
+{{- end }}
+
+{{ define "plus-step-fields" -}}
+{{- $m := .Model -}}
+<div class="plus-step-grid">
+	<div data-field>
+		<label x-text="{{ $m }}.position === 1 || ({{ $m }}.id === undefined && steps.length === 0) ? 'Wait after entering the sequence' : 'Wait after the previous email'"></label>
+		<div class="plus-delay">
+			<input type="number" min="0" step="1" required x-model.number="{{ $m }}.delay_n" aria-label="Wait amount" />
+			<select x-model="{{ $m }}.delay_unit" aria-label="Wait unit">
+				<option value="minutes">minutes</option>
+				<option value="hours">hours</option>
+				<option value="days">days</option>
+				<template x-if="{{ $m }}.delay_unit === 'seconds'"><option value="seconds">seconds</option></template>
+			</select>
+		</div>
+		<small data-hint>0 = send immediately.</small>
+	</div>
+</div>
+{{- end }}
+
+
+{{- /* ===================== Settings tab / new form ===================== */ -}}
+{{ define "plus-seq-settings" -}}
+{{- $d := .Data -}}
+{{- $s := $d.Sequence -}}
+{{- $canManage := $d.Can "sequences:manage" -}}
+<form @submit.prevent="{{ if $d.IsNew }}createSequence(){{ else }}saveSettings(){{ end }}">
+	<div class="page-content content">
+		<section class="card">
+			<label data-field>
+				{{ .L.T "globals.fields.name" }}
+				<input name="name" maxlength="200" required autofocus x-model="form.name" placeholder="e.g. Welcome series" />
+			</label>
+
+			<div data-field>
+				<label for="seq-list">List</label>
+				<select id="seq-list" required x-model.number="form.list_id" {{ if and (not $d.IsNew) (ne $s.Status "draft") }}disabled{{ end }}>
+					<option value="">Choose a list…</option>
+					<template x-for="l in opts.lists" :key="l.id">
+						<option :value="l.id" :selected="l.id === form.list_id"
+							:disabled="l.sequence_id && (!seq || l.sequence_id !== seq.id)"
+							x-text="l.name + (l.optin === 'double' ? ' (double opt-in)' : '') + (l.sequence_id && (!seq || l.sequence_id !== seq.id) ? ' — already has “' + l.sequence_name + '”' : '')"></option>
+					</template>
+				</select>
+				<small data-hint>The sequence's audience. A list can have only one sequence. {{ if and (not $d.IsNew) (ne $s.Status "draft") }}It can't be changed once the sequence has been activated.{{ else }}It can't be changed after the sequence is activated.{{ end }}</small>
+			</div>
+
+			<label data-field>
+				<input type="checkbox" role="switch" x-model="form.trigger_enabled" />
+				Start automatically when someone subscribes to this list
+				<small data-hint>On double opt-in lists, people start once they confirm. Turn this off for a sequence you only fill by enrolling people yourself.</small>
+			</label>
+
+			<div data-field>
+				<label for="seq-reentry-active">If someone <strong>currently in</strong> this sequence subscribes again or is enrolled again</label>
+				<select id="seq-reentry-active" x-model="form.reentry_while_active">
+					<option value="continue">Continue where they are</option>
+					<option value="restart">Restart from step 1</option>
+				</select>
+			</div>
+
+			<div data-field>
+				<label for="seq-reentry-exit">If someone who already <strong>finished or left</strong> this sequence comes back</label>
+				<select id="seq-reentry-exit" x-model="form.reentry_after_exit">
+					<option value="ignore">Don't start it again</option>
+					<option value="restart">Start again from step 1</option>
+				</select>
+				<small data-hint>"Comes back" means re-subscribing to the list, or being enrolled again.</small>
+			</div>
+
+			<label data-field>
+				Default "next email now" landing page (optional)
+				<input type="url" maxlength="2000" x-model="form.default_skip_landing_url" placeholder="https://…" data-testid="input-default-landing" />
+				<small data-hint>Where people go after pressing "send me the next email now" (<code>{{ "{{ SequenceNextURL }}" }}</code>). A message can override it in its <strong>Next email</strong> tab. Empty: a simple confirmation page.</small>
+			</label>
+
+			<label data-field>
+				Default From address for new steps (optional)
+				<input type="text" maxlength="500" x-model="form.from_email" placeholder="Listmonk's default From address" />
+				<small data-hint>Each message's own From address is set on its campaign screen.</small>
+			</label>
+		</section>
+
+		{{- if $canManage }}
+		<footer class="hstack justify-between mt-6">
+			<div>
+				{{- if and (not $d.IsNew) (ne $s.Status "active") }}
+					<button type="button" class="outline" data-variant="danger" @click="deleteSequence()">{{ Icon "trash-2" }} Delete sequence</button>
+				{{- end }}
+			</div>
+			<button type="submit" data-variant="primary" data-testid="btn-save" :disabled="isLoading('plus.save')">{{ if $d.IsNew }}Create and add steps{{ else }}{{ .L.T "globals.buttons.save" }}{{ end }}</button>
+		</footer>
+		{{- end }}
+	</div>
+</form>
+{{- end }}
+
+
+{{- /* ===================== Activity tab ===================== */ -}}
+{{ define "plus-seq-activity" -}}
+{{- $d := .Data -}}
+{{- $s := $d.Sequence -}}
+{{- $base := printf "%s/%d/activity" (URI "/admin/plus/sequences") $s.ID -}}
+<div class="page-content">
+	<div class="plus-stats">
+		<a href="{{ $base }}" class="badge{{ if eq $d.Status "" }} status-running{{ end }}">All</a>
+		<a href="{{ $base }}?status=active" class="badge{{ if eq $d.Status "active" }} status-running{{ end }}">{{ FormatNumber ($s.Count "active") }} in progress</a>
+		<a href="{{ $base }}?status=completed" class="badge{{ if eq $d.Status "completed" }} status-finished{{ end }}">{{ FormatNumber ($s.Count "completed") }} completed</a>
+		<a href="{{ $base }}?status=cancelled" class="badge{{ if eq $d.Status "cancelled" }} status-cancelled{{ end }}">{{ FormatNumber ($s.Count "cancelled") }} stopped</a>
+	</div>
+
+	<div class="card has-table">
+		<div class="table-wrapper">
+			<table>
+				<thead>
+					<tr>
+						<th>Subscriber</th>
+						<th>{{ .L.T "globals.fields.status" }}</th>
+						<th>Progress</th>
+						<th>How they entered</th>
+						<th>Entered</th>
+						<th class="align-right"></th>
+					</tr>
+				</thead>
+				<tbody>
+					{{- range $d.Enrollments }}
+					<tr data-testid="enrollment-row">
+						<td>
+							{{- if .SubscriberEmail }}<a href="{{ URI "/admin/subscribers" }}/{{ .SubscriberID }}">{{ .SubscriberEmail }}</a>
+							<div class="text-light text-8">{{ .SubscriberName }}</div>{{ else }}<span class="text-light">(deleted)</span>{{ end }}
+						</td>
+						<td>
+							{{- if eq .Status "active" }}{{ Badge (list (Dot) "In progress") "enum status-running" }}
+							{{- else if eq .Status "completed" }}{{ Badge (list (Dot) "Completed") "enum status-finished" }}
+							{{- else }}{{ Badge (list (Dot) "Stopped") "enum status-cancelled" }}
+								<div class="text-light text-8">{{ .CancelReason.String | replace "_" " " }}</div>{{ end }}
+						</td>
+						<td class="text-8">
+							{{ .Sends }} of {{ len $s.Steps }} sent
+							{{- if and (eq .Status "active") .NextSendAt.Valid }}
+								<div class="text-light">Step {{ .NextStep }} {{ if $s.Status | eq "active" }}due {{ NiceDate .NextSendAt.Time true }}{{ else }}waiting (sequence {{ $s.Status }}){{ end }}</div>
+							{{- end }}
+						</td>
+						<td class="text-8">{{ if eq .Source "trigger" }}Subscribed{{ else if eq .Source "api" }}API{{ else }}Enrolled manually{{ end }}</td>
+						<td class="text-8">{{ NiceDate .EnrolledAt true }}</td>
+						<td class="align-right">
+							{{- if and (eq .Status "active") ($d.Can "sequences:manage") }}
+								<button type="button" class="ghost small" data-variant="danger" @click="cancelEnrollment({{ .ID }}, {{ ToJSON .SubscriberEmail }})">{{ Icon "x" }} Stop</button>
+							{{- end }}
+						</td>
+					</tr>
+					{{- else }}
+						{{ template "empty-state" 6 }}
+					{{- end }}
+				</tbody>
+			</table>
+		</div>
+	</div>
+
+	{{- if or $d.HasPrev $d.HasNext }}
+	<nav class="hstack justify-between mt-4" aria-label="Pagination">
+		<span class="text-light text-8">{{ FormatNumber $d.Total }} total · page {{ $d.Page }}</span>
+		<div class="hstack gap-2">
+			{{- if $d.HasPrev }}<a class="button outline small" href="{{ $base }}?status={{ $d.Status }}&page={{ sub $d.Page 1 }}">{{ Icon "chevron-left" }} Previous</a>{{ end }}
+			{{- if $d.HasNext }}<a class="button outline small" href="{{ $base }}?status={{ $d.Status }}&page={{ add $d.Page 1 }}">Next {{ Icon "chevron-right" }}</a>{{ end }}
+		</div>
+	</nav>
+	{{- end }}
+</div>
+{{- end }}
+
+
+{{- /* ===================== Enroll dialog ===================== */ -}}
+{{ define "plus-seq-enroll-dialog" -}}
+{{- $s := .Data.Sequence -}}
+<dialog x-ref="enrollDialog" data-testid="enroll-dialog" class="plus-enroll-dialog">
+	<form @submit.prevent="enroll(false)">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title">Enroll people in "{{ $s.Name }}"</h4></header>
+			<section class="dialog-body">
+				<div data-field class="plus-modes" role="radiogroup" aria-label="Who to enroll">
+					<label class="plus-check"><input type="radio" value="all" x-model="enrollForm.mode" @change="enrollPreview = null" /> <span>Everyone on the list "{{ $s.ListName }}"</span></label>
+					<label class="plus-check"><input type="radio" value="pick" x-model="enrollForm.mode" @change="enrollPreview = null; loadCandidates(1)" data-testid="enroll-mode-pick" /> <span>Specific subscribers</span></label>
+				</div>
+
+				{{- /* Specific subscribers: the "leave out" option comes first, then the picker. */}}
+				<template x-if="enrollForm.mode === 'pick'">
+					<div>
+						<label data-field class="plus-check">
+							<input type="checkbox" x-model="enrollForm.exclude_other" @change="loadCandidates(1)" data-testid="enroll-exclude-pick" />
+							<span>Leave out people who are currently in another sequence</span>
+						</label>
+						<div class="plus-pick" data-testid="enroll-picker">
+							<div class="hstack gap-2 plus-pick-bar">
+								<input type="search" placeholder="Search name or email" x-model="cand.query" @input.debounce.300ms="loadCandidates(1)" aria-label="Search subscribers" />
+							</div>
+							<label class="plus-pick-all" x-show="cand.results.length > 0">
+								<input type="checkbox" :checked="allShownPicked" @change="togglePickShown($event.target.checked)" />
+								<span x-text="'Select all ' + cand.results.length + ' shown'"></span>
+							</label>
+							<div class="plus-pick-list" :aria-busy="isLoading('plus.candidates')">
+								<template x-for="c in cand.results" :key="c.id">
+									<label class="plus-pick-row" data-testid="candidate">
+										<input type="checkbox" :value="c.id" :checked="isPicked(c.id)" @change="togglePick(c.id, $event.target.checked)" />
+										<span><strong x-text="c.name || c.email"></strong> <span class="text-light text-8" x-text="c.email"></span></span>
+									</label>
+								</template>
+								<p class="text-light text-8" x-show="!isLoading('plus.candidates') && cand.results.length === 0" x-text="cand.query ? 'Nobody matches this search.' : 'Nobody left to enroll: everyone on the list is already in this sequence, has completed it, or isn\'t eligible.'"></p>
+							</div>
+							<div class="hstack justify-between text-8 plus-pick-foot" x-show="cand.total > cand.perPage">
+								<button type="button" class="ghost small" :disabled="cand.page <= 1" @click="loadCandidates(cand.page - 1)">{{ Icon "chevron-left" }} Previous</button>
+								<span class="text-light" x-text="'Page ' + cand.page + ' of ' + Math.ceil(cand.total / cand.perPage) + ' · ' + cand.total + ' people'"></span>
+								<button type="button" class="ghost small" :disabled="cand.page * cand.perPage >= cand.total" @click="loadCandidates(cand.page + 1)">Next {{ Icon "chevron-right" }}</button>
+							</div>
+						</div>
+						<p class="text-light text-8">Only people who can be enrolled are listed: subscribed to "{{ $s.ListName }}"{{ if eq $s.ListOptin "double" }} and confirmed{{ end }}, not blocklisted, not currently in this sequence and not having completed it.</p>
+					</div>
+				</template>
+
+				{{- /* Everyone on the list: unchanged (preview, then enroll). */}}
+				<template x-if="enrollForm.mode === 'all'">
+					<div>
+						<label data-field class="plus-check">
+							<input type="checkbox" x-model="enrollForm.exclude_other" @change="enrollPreview = null" />
+							<span>Leave out people who are currently in another sequence</span>
+						</label>
+						<p class="text-light text-8">Only eligible people are enrolled: subscribed to "{{ $s.ListName }}"{{ if eq $s.ListOptin "double" }} and confirmed{{ end }}, and not blocklisted. Your re-entry settings apply.</p>
+						<p class="text-light text-8" x-show="!enrollPreview">Press <strong>Preview</strong> to see who would be enrolled before anything is saved.</p>
+					</div>
+				</template>
+
+				<div class="plus-enroll-result" x-show="enrollPreview" aria-live="polite">
+					<strong x-text="enrollPreview && enrollPreview.dry_run ? 'Preview — nothing saved yet' : 'Done'"></strong>
+					<dl>
+						<dt x-text="enrollPreview ? enrollPreview.enrolled : 0"></dt><dd x-text="enrollPreview && enrollPreview.dry_run ? 'will be enrolled' : 'enrolled'"></dd>
+						<template x-if="enrollPreview && enrollPreview.restarted">
+							<div style="display: contents"><dt x-text="enrollPreview.restarted"></dt><dd>restarted from step 1</dd></div>
+						</template>
+						<template x-for="[reason, n] in Object.entries((enrollPreview && enrollPreview.skipped) || {})" :key="reason">
+							<div style="display: contents"><dt x-text="n"></dt><dd x-text="'skipped: ' + skipLabel(reason)"></dd></div>
+						</template>
+					</dl>
+					<p class="text-light text-8" x-show="enrollPreview && enrollPreview.dry_run && !enrollCount">Nobody to enroll with these settings.</p>
+				</div>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" class="outline" @click="$refs.enrollDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+				<button type="button" class="outline" x-show="enrollForm.mode === 'all'" @click="enroll(true)" :disabled="isLoading('plus.enroll')">Preview</button>
+				<button type="submit" data-variant="primary" data-testid="btn-enroll-confirm" :disabled="isLoading('plus.enroll') || !enrollCount" x-text="enrollCount ? 'Enroll ' + enrollCount : 'Enroll'"></button>
+			</footer>
+		</div>
+	</form>
+</dialog>
+{{- end }}

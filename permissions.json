@@ -20,6 +20,14 @@
         ]
     },
     {
+        "group": "sequences",
+        "permissions":
+        [
+            "sequences:get",
+            "sequences:manage"
+        ]
+    },
+    {
         "group": "campaigns",
         "permissions":
         [

@@ -425,6 +425,11 @@ func (m *Manager) TemplateFuncs(c *models.Campaign, opts ...models.CampOpt) temp
 		"RootURL": func() string {
 			return m.cfg.RootURL
 		},
+		// listmonk-plus: "send me the next email now" link in sequence messages.
+		// Renders a link for any campaign; the page explains when it doesn't apply.
+		"SequenceNextURL": func(msg *CampaignMessage) string {
+			return m.cfg.RootURL + "/plus/seq/next/" + msg.Campaign.UUID + "/" + msg.Subscriber.UUID
+		},
 	}
 
 	maps.Copy(f, m.GenericTemplateFuncs(opts...))
