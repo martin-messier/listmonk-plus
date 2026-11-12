@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/messenger/email"
+	"github.com/knadh/listmonk/internal/plus" // listmonk-plus
 	"github.com/knadh/listmonk/internal/utils"
 	"github.com/knadh/listmonk/models"
 	"github.com/knadh/stuffbin"
@@ -60,6 +61,12 @@ func install(lastVer string, db *sqlx.DB, fs stuffbin.FileSystem, prompt, idempo
 	// Migrate the tables.
 	if err := installSchema(lastVer, db, fs); err != nil {
 		lo.Fatalf("error migrating DB schema: %v", err)
+	}
+
+	// listmonk-plus: create our tables before the queries are prepared, as some
+	// upstream queries reference them (e.g. to hide sequence step campaigns).
+	if err := plus.Migrate(db, lo); err != nil {
+		lo.Fatalf("listmonk-plus: %v", err)
 	}
 
 	// Load the queries.

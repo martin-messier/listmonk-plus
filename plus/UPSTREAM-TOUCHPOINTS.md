@@ -28,6 +28,7 @@ All hooks are marked in code with a `listmonk-plus` comment: `git grep -n "listm
 | 18 | `static/admin/views/campaign.html` | Breadcrumb to the sequence, "Sequence step N of M" badge, banner, `$canSend = false` for steps (hides Start/Schedule), extra **Next email** tab + panel (`plus-step-next-tab` partial) after Archive | Native campaign screen for step messages | M5 |
 | 19 | `static/admin/partials/campaign-form.html` | Lists selector disabled + hint for steps; Schedule card hidden for steps | Same | M5 |
 | 20 | `static/admin/assets/js/main.js` `listenErrorEvents()` | Open the `/api/events` stream only once the page is shown (not while pre-rendered), close it on `pagehide`, reopen on `pageshow` | **Upstream bug**: the stream was never closed, so browsers that keep left pages alive or pre-render links (seen with Dia) piled up open streams and hit the ~6 connections/host limit of HTTP/1.1, stalling every click. Worth proposing upstream. Not an issue over HTTP/2 (HTTPS behind Caddy) | M5 |
+| 21 | `cmd/install.go` `install()`, after `installSchema` (+ import) | `plus.Migrate(db, lo)` before `prepareQueries` | Fresh installs: upstream queries we modified reference `plus_*` tables, so they must exist before the installer prepares queries. Without it the installer crashed halfway (no templates, lists or admin) — happened on the first production install | Fix |
 
 ## Our files inside upstream folders
 
@@ -54,7 +55,9 @@ points from `static/admin/assets/js/views/*.js`, and `cmd/plus_views.go` uses `a
 
 1. `git fetch upstream --tags` and merge the new release tag into a branch.
 2. Resolve conflicts; re-check every row above.
-3. Build, run `go test ./...`, start with `plus/scripts/dev-restart.sh`.
+3. Build, run `go test ./...`, start with `plus/scripts/dev-restart.sh`. Also test a **fresh install** on an empty
+   throwaway database (`--install --idempotent --yes` with `LISTMONK_ADMIN_USER/PASSWORD`): admin, templates and
+   lists must be created.
 4. Check in the browser: Sequences pages (list, editor tabs, enroll dialog, analytics) and a step's campaign screen
    (banner, no Start/Schedule, locked lists); the Campaigns list must not show step campaigns.
 5. Run `plus/scripts/test-events.py` and, with `PLUS_WORKER_INTERVAL=2s plus/scripts/dev-restart.sh`,
