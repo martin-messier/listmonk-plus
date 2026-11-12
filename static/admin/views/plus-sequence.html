@@ -70,10 +70,10 @@
 	.plus-delay input { max-width: 7rem; }
 	.plus-wait { text-align: center; color: var(--muted-foreground, inherit); opacity: .75; margin: calc(var(--space-2) * -1) 0 var(--space-3); font-size: .85em; }
 	.plus-step-head { flex-wrap: wrap; }
-	.plus-step-title { display: flex; align-items: baseline; gap: var(--space-3); flex: 1 1 260px; min-width: 0; flex-wrap: wrap; }
+	.plus-step-title { display: flex; align-items: baseline; gap: var(--space-2); flex: 1 1 260px; min-width: 0; flex-wrap: wrap; }
 	.plus-step-title h3 { white-space: nowrap; }
 	.plus-step-name { min-width: 0; align-items: center; }
-	.plus-step-name strong { font-size: 1.05em; overflow-wrap: anywhere; }
+	.plus-step-name h3 { overflow-wrap: anywhere; }
 	.plus-step-name input { width: min(360px, 60vw); }
 	.plus-step-actions { flex: none; margin-left: auto; }
 	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
@@ -125,10 +125,10 @@
 			<form class="card plus-step" @submit.prevent="saveStep(step)" :data-testid="'step-' + step.position">
 				<div class="plus-step-head">
 					<div class="plus-step-title">
-						<h3 class="m-0" x-text="'Step ' + step.position"></h3>
+						<h3 class="m-0" x-text="'Step ' + step.position + ' -'"></h3>
 						<template x-if="!step.editingName">
 							<div class="hstack gap-2 plus-step-name">
-								<strong x-text="step.campaign_name" data-testid="step-name"></strong>
+								<h3 class="m-0" x-text="step.campaign_name" data-testid="step-name"></h3>
 								{{- if $canManage }}
 								<button type="button" class="ghost small icon" title="Rename" aria-label="Rename" data-testid="btn-rename" @click="startRename(step)">{{ Icon "edit-2" }}</button>
 								{{- end }}
