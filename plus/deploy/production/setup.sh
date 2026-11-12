@@ -19,7 +19,10 @@ ADMIN_USER="${ADMIN_USER:-$(whoami)}"
 mkdir -p "$STATE/backups"
 chmod 700 "$STATE"
 
-rand() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+# Random alphanumeric string. Every command in the pipe reads its whole input,
+# so nothing gets SIGPIPE: with `set -o pipefail`, `tr </dev/urandom | head`
+# made the script exit silently at the first password.
+rand() { openssl rand -base64 96 | tr -dc 'A-Za-z0-9' | cut -c1-"$1"; }
 
 if [ ! -f "$ENV" ]; then
   umask 077
