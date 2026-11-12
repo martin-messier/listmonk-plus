@@ -85,8 +85,12 @@ function editorView(seq, opts) {
       reentry_after_exit: seq ? seq.reentry_after_exit : 'ignore',
       from_email: seq && seq.from_email ? seq.from_email : '',
     },
-    enrollForm: { mode: 'all', emails: '', exclude_other: true },
+    enrollForm: { mode: 'all', exclude_other: true },
     enrollPreview: null,
+
+    // "Specific subscribers" picker.
+    cand: { query: '', results: [], total: 0, page: 1, perPage: 50 },
+    pickedIds: [],
 
     get isActive() {
       return this.seq && this.seq.status === 'active';
@@ -156,21 +160,52 @@ function editorView(seq, opts) {
     // Enrollment.
     openEnroll() {
       this.enrollPreview = null;
+      this.pickedIds = [];
+      this.cand = { query: '', results: [], total: 0, page: 1, perPage: 50 };
+      if (this.enrollForm.mode === 'pick') this.loadCandidates(1);
       this.$refs.enrollDialog.showModal();
     },
 
-    get enrollEmails() {
-      return this.enrollForm.emails.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
+    async loadCandidates(page) {
+      const q = new URLSearchParams({
+        page, per_page: this.cand.perPage, query: this.cand.query,
+        exclude_other_sequences: this.enrollForm.exclude_other,
+      });
+      const data = await api('plus.candidates', `/plus/sequences/${this.seq.id}/candidates?${q}`, 'GET');
+      this.cand.results = data.results;
+      this.cand.total = data.total;
+      this.cand.page = data.page;
+      // When the whole (unfiltered) list fits on one page, drop ticks for people
+      // who are no longer listed (e.g. now left out as being in another sequence).
+      if (!this.cand.query && data.total <= data.results.length) {
+        const listed = new Set(data.results.map((c) => c.id));
+        this.pickedIds = this.pickedIds.filter((id) => listed.has(id));
+      }
     },
 
-    // People the last preview would enroll (0 until a preview has been run).
+    isPicked(id) {
+      return this.pickedIds.includes(id);
+    },
+
+    togglePick(id, on) {
+      this.pickedIds = on ? [...new Set([...this.pickedIds, id])] : this.pickedIds.filter((x) => x !== id);
+    },
+
+    get allShownPicked() {
+      return this.cand.results.length > 0 && this.cand.results.every((c) => this.pickedIds.includes(c.id));
+    },
+
+    togglePickShown(on) {
+      const shown = this.cand.results.map((c) => c.id);
+      this.pickedIds = on ? [...new Set([...this.pickedIds, ...shown])] : this.pickedIds.filter((id) => !shown.includes(id));
+    },
+
+    // "Specific": the ticked people. "Everyone": what the last preview would
+    // enroll (0 until a preview has been run).
     get enrollCount() {
+      if (this.enrollForm.mode === 'pick') return this.pickedIds.length;
       const p = this.enrollPreview;
       return p && p.dry_run ? p.enrolled + (p.restarted || 0) : 0;
-    },
-
-    get enrollReady() {
-      return this.enrollForm.mode === 'all' || this.enrollEmails.length > 0;
     },
 
     async enroll(dryRun) {
@@ -182,7 +217,7 @@ function editorView(seq, opts) {
       if (this.enrollForm.mode === 'all') {
         body.all = true;
       } else {
-        body.subscriber_emails = this.enrollEmails;
+        body.subscriber_ids = this.pickedIds;
       }
       this.enrollPreview = await api('plus.enroll', `/plus/sequences/${this.seq.id}/enrollments`, 'POST', body);
       if (!dryRun) {

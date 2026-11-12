@@ -29,6 +29,8 @@ func (p *Plus) RegisterAPI(g *echo.Group, pm PermFunc) {
 	g.DELETE("/api/plus/sequences/:id/steps/:stepID", pm(p.handleDeleteStep, manage))
 
 	g.GET("/api/plus/sequences/:id/enrollments", pm(p.handleGetEnrollments, get))
+	// Lists subscribers' names and emails, so it also needs a subscriber read permission.
+	g.GET("/api/plus/sequences/:id/candidates", pm(pm(p.handleGetCandidates, "subscribers:get_all", "subscribers:get"), manage))
 	g.POST("/api/plus/sequences/:id/enrollments", pm(p.handleEnroll, manage))
 	g.DELETE("/api/plus/sequences/:id/enrollments/:enrID", pm(p.handleCancelEnrollment, manage))
 }
@@ -170,6 +172,29 @@ func (p *Plus) handleGetEnrollments(c *echo.Context) error {
 		perPage = 50
 	}
 	out, total, err := p.getEnrollments(id, status, page, perPage)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, okResp{map[string]any{
+		"results": out, "total": total, "page": page, "per_page": perPage,
+	}})
+}
+
+func (p *Plus) handleGetCandidates(c *echo.Context) error {
+	id, err := intParam(c, "id")
+	if err != nil {
+		return err
+	}
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	if perPage < 1 || perPage > 500 {
+		perPage = 50
+	}
+	excl, _ := strconv.ParseBool(c.QueryParam("exclude_other_sequences"))
+	out, total, err := p.candidates(id, c.QueryParam("query"), excl, page, perPage)
 	if err != nil {
 		return err
 	}

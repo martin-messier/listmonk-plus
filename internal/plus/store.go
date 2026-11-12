@@ -640,3 +640,47 @@ func trimPtr(s *string) *string {
 	t := strings.TrimSpace(*s)
 	return &t
 }
+
+// Candidate is a subscriber who can be enrolled in a sequence.
+type Candidate struct {
+	ID    int    `db:"id" json:"id"`
+	Email string `db:"email" json:"email"`
+	Name  string `db:"name" json:"name"`
+	Total int    `db:"total" json:"-"`
+}
+
+// candidates returns the subscribers that enrolling would actually enroll
+// (the "Specific subscribers" picker): eligible on the sequence's list (§4.1),
+// not currently in this sequence, never completed it, and — unless the
+// sequence restarts people who left — never in it before. With excludeOther,
+// people active in another sequence are left out too.
+func (p *Plus) candidates(seqID int, query string, excludeOther bool, page, perPage int) ([]Candidate, int, error) {
+	rules, err := getSeqRules(p.db, seqID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, 0, errNotFound("sequence")
+		}
+		return nil, 0, err
+	}
+	out := []Candidate{}
+	err = p.db.Select(&out, `
+		SELECT s.id, s.email, s.name, COUNT(*) OVER () AS total
+		FROM subscribers s
+		JOIN subscriber_lists sl ON sl.subscriber_id = s.id AND sl.list_id = $2
+		WHERE s.status = 'enabled' AND sl.status <> 'unsubscribed'
+		  AND ($3 <> 'double' OR sl.status = 'confirmed')
+		  AND NOT EXISTS (SELECT 1 FROM plus_enrollments e WHERE e.sequence_id = $1 AND e.subscriber_id = s.id
+		                  AND (e.status IN ('active', 'completed') OR $4 <> 'restart'))
+		  AND (NOT $5 OR NOT EXISTS (SELECT 1 FROM plus_enrollments e WHERE e.sequence_id <> $1
+		                             AND e.subscriber_id = s.id AND e.status = 'active'))
+		  AND ($6 = '' OR s.email ILIKE '%' || $6 || '%' OR s.name ILIKE '%' || $6 || '%')
+		ORDER BY LOWER(s.name), s.email
+		LIMIT $7 OFFSET $8`,
+		seqID, rules.ListID, rules.ListOptin, rules.ReentryAfterExit, excludeOther,
+		strings.TrimSpace(query), perPage, (page-1)*perPage)
+	total := 0
+	if len(out) > 0 {
+		total = out[0].Total
+	}
+	return out, total, err
+}

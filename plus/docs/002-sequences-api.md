@@ -57,6 +57,7 @@ Step campaigns are excluded from `GET /api/campaigns` and from Campaigns → Ana
 | GET | `/api/plus/sequences/:id/enrollments?status=&page=&per_page=` | Newest first; `per_page` ≤ 500 |
 | POST | `/api/plus/sequences/:id/enrollments` | `{subscriber_ids: [..]}` and/or `{subscriber_emails: [..]}`, **or** `{all: true}` (every member of the list). Optional: `source` (`manual` \| `manual-bulk` \| `api`), `exclude_other_sequences` (skip people active in another sequence), `dry_run` (preview: nothing is saved, response has `dry_run: true`) |
 | DELETE | `/api/plus/sequences/:id/enrollments/:enrID` | Cancel an active enrollment |
+| GET | `/api/plus/sequences/:id/candidates?query=&exclude_other_sequences=&page=&per_page=` | Subscribers that enrolling would actually enroll ("Specific subscribers" picker): eligible on the list, not in this sequence now, never completed it, and — unless re-entry after exit is `restart` — never in it before. `exclude_other_sequences=true` also hides people active in another sequence. Needs `sequences:manage` and a subscriber read permission. |
 
 Enroll response: `{enrolled, restarted, skipped: {reason: count}}`. Skip reasons: `not_found`,
 `not_on_list`, `unsubscribed`, `unconfirmed` (double opt-in lists), `subscriber_disabled`,

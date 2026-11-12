@@ -70,6 +70,19 @@
 	                 padding: var(--space-3); margin-bottom: var(--space-4); border-radius: var(--radius-medium, 8px); background: var(--muted, rgba(0,0,0,.04)); }
 	.plus-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
 	.plus-stats a { text-decoration: none; }
+	.plus-enroll-dialog { width: min(560px, calc(100vw - 32px)); max-width: none; overflow-x: hidden; }
+	.plus-enroll-dialog .dialog-card { width: 100%; box-sizing: border-box; }
+	.plus-enroll-dialog .plus-check { display: flex; flex-direction: row; flex-wrap: nowrap; gap: var(--space-2); align-items: flex-start; }
+	.plus-enroll-dialog .plus-check span { flex: 1; min-width: 0; }
+	.plus-enroll-dialog .plus-check input { flex: none; margin-top: .2em; }
+	.plus-pick, .plus-pick-bar, .plus-pick-bar input { box-sizing: border-box; max-width: 100%; }
+	.plus-pick-row span { overflow-wrap: anywhere; }
+	.plus-pick { border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: var(--radius-medium, 8px); padding: var(--space-3); margin-bottom: var(--space-3); }
+	.plus-pick-bar input { width: 100%; }
+	.plus-pick-all { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-3) 0 var(--space-2); font-size: .9em; }
+	.plus-pick-list { max-height: 280px; overflow-y: auto; }
+	.plus-pick-row { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-1) 0; cursor: pointer; }
+	.plus-pick-foot { margin-top: var(--space-2); align-items: center; }
 	.plus-enroll-result dl { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-3) 0 0; }
 	.plus-enroll-result dt { font-weight: 600; text-align: right; }
 	.plus-enroll-result dd { margin: 0; }
@@ -328,26 +341,62 @@
 {{- /* ===================== Enroll dialog ===================== */ -}}
 {{ define "plus-seq-enroll-dialog" -}}
 {{- $s := .Data.Sequence -}}
-<dialog x-ref="enrollDialog" data-testid="enroll-dialog">
+<dialog x-ref="enrollDialog" data-testid="enroll-dialog" class="plus-enroll-dialog">
 	<form @submit.prevent="enroll(false)">
 		<div class="dialog-card content">
 			<header class="dialog-head"><h4 class="dialog-title">Enroll people in "{{ $s.Name }}"</h4></header>
 			<section class="dialog-body">
 				<div data-field>
 					<label><input type="radio" value="all" x-model="enrollForm.mode" @change="enrollPreview = null" /> Everyone on the list "{{ $s.ListName }}"</label>
-					<label><input type="radio" value="emails" x-model="enrollForm.mode" @change="enrollPreview = null" /> Specific subscribers</label>
+					<label><input type="radio" value="pick" x-model="enrollForm.mode" @change="enrollPreview = null; loadCandidates(1)" data-testid="enroll-mode-pick" /> Specific subscribers</label>
 				</div>
-				<label data-field x-show="enrollForm.mode === 'emails'">
-					Email addresses (one per line, or separated by commas)
-					<textarea rows="5" x-model="enrollForm.emails" @input="enrollPreview = null"></textarea>
-				</label>
-				<label data-field>
-					<input type="checkbox" x-model="enrollForm.exclude_other" @change="enrollPreview = null" />
-					Leave out people who are currently in another sequence
-				</label>
-				<p class="text-light text-8">Only eligible people are enrolled: subscribed to "{{ $s.ListName }}"{{ if eq $s.ListOptin "double" }} and confirmed{{ end }}, and not blocklisted. Your re-entry settings apply.</p>
 
-				<p class="text-light text-8" x-show="!enrollPreview">Press <strong>Preview</strong> to see who would be enrolled before anything is saved.</p>
+				{{- /* Specific subscribers: the "leave out" option comes first, then the picker. */}}
+				<template x-if="enrollForm.mode === 'pick'">
+					<div>
+						<label data-field class="plus-check">
+							<input type="checkbox" x-model="enrollForm.exclude_other" @change="loadCandidates(1)" data-testid="enroll-exclude-pick" />
+							<span>Leave out people who are currently in another sequence</span>
+						</label>
+						<div class="plus-pick" data-testid="enroll-picker">
+							<div class="hstack gap-2 plus-pick-bar">
+								<input type="search" placeholder="Search name or email" x-model="cand.query" @input.debounce.300ms="loadCandidates(1)" aria-label="Search subscribers" />
+							</div>
+							<label class="plus-pick-all" x-show="cand.results.length > 0">
+								<input type="checkbox" :checked="allShownPicked" @change="togglePickShown($event.target.checked)" />
+								<span x-text="'Select all ' + cand.results.length + ' shown'"></span>
+							</label>
+							<div class="plus-pick-list" :aria-busy="isLoading('plus.candidates')">
+								<template x-for="c in cand.results" :key="c.id">
+									<label class="plus-pick-row" data-testid="candidate">
+										<input type="checkbox" :value="c.id" :checked="isPicked(c.id)" @change="togglePick(c.id, $event.target.checked)" />
+										<span><strong x-text="c.name || c.email"></strong> <span class="text-light text-8" x-text="c.email"></span></span>
+									</label>
+								</template>
+								<p class="text-light text-8" x-show="!isLoading('plus.candidates') && cand.results.length === 0" x-text="cand.query ? 'Nobody matches this search.' : 'Nobody left to enroll: everyone on the list is already in this sequence, has completed it, or isn\'t eligible.'"></p>
+							</div>
+							<div class="hstack justify-between text-8 plus-pick-foot" x-show="cand.total > cand.perPage">
+								<button type="button" class="ghost small" :disabled="cand.page <= 1" @click="loadCandidates(cand.page - 1)">{{ Icon "chevron-left" }} Previous</button>
+								<span class="text-light" x-text="'Page ' + cand.page + ' of ' + Math.ceil(cand.total / cand.perPage) + ' · ' + cand.total + ' people'"></span>
+								<button type="button" class="ghost small" :disabled="cand.page * cand.perPage >= cand.total" @click="loadCandidates(cand.page + 1)">Next {{ Icon "chevron-right" }}</button>
+							</div>
+						</div>
+						<p class="text-light text-8">Only people who can be enrolled are listed: subscribed to "{{ $s.ListName }}"{{ if eq $s.ListOptin "double" }} and confirmed{{ end }}, not blocklisted, not currently in this sequence and not having completed it.</p>
+					</div>
+				</template>
+
+				{{- /* Everyone on the list: unchanged (preview, then enroll). */}}
+				<template x-if="enrollForm.mode === 'all'">
+					<div>
+						<label data-field class="plus-check">
+							<input type="checkbox" x-model="enrollForm.exclude_other" @change="enrollPreview = null" />
+							<span>Leave out people who are currently in another sequence</span>
+						</label>
+						<p class="text-light text-8">Only eligible people are enrolled: subscribed to "{{ $s.ListName }}"{{ if eq $s.ListOptin "double" }} and confirmed{{ end }}, and not blocklisted. Your re-entry settings apply.</p>
+						<p class="text-light text-8" x-show="!enrollPreview">Press <strong>Preview</strong> to see who would be enrolled before anything is saved.</p>
+					</div>
+				</template>
+
 				<div class="plus-enroll-result" x-show="enrollPreview" aria-live="polite">
 					<strong x-text="enrollPreview && enrollPreview.dry_run ? 'Preview — nothing saved yet' : 'Done'"></strong>
 					<dl>
@@ -364,8 +413,8 @@
 			</section>
 			<footer class="dialog-foot hstack gap-3 justify-end">
 				<button type="button" class="outline" @click="$refs.enrollDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
-				<button type="button" class="outline" @click="enroll(true)" :disabled="isLoading('plus.enroll') || !enrollReady">Preview</button>
-				<button type="submit" data-variant="primary" data-testid="btn-enroll-confirm" :disabled="isLoading('plus.enroll') || !enrollReady || !enrollCount" x-text="enrollCount ? 'Enroll ' + enrollCount : 'Enroll'"></button>
+				<button type="button" class="outline" x-show="enrollForm.mode === 'all'" @click="enroll(true)" :disabled="isLoading('plus.enroll')">Preview</button>
+				<button type="submit" data-variant="primary" data-testid="btn-enroll-confirm" :disabled="isLoading('plus.enroll') || !enrollCount" x-text="enrollCount ? 'Enroll ' + enrollCount : 'Enroll'"></button>
 			</footer>
 		</div>
 	</form>

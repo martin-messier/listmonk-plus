@@ -430,6 +430,24 @@ def main():
     http("DELETE", "/api/plus/sequences/{}/enrollments/{}".format(seq2["id"], enr_id))
     check("47 admin can stop an enrollment", enrollments(seq2["id"], d1)[0][2] == "cancelled_by_admin")
 
+    # "Specific subscribers" picker: who can be enrolled into seq2 (list "other").
+    d5 = http("POST", "/api/subscribers", {"email": addr("d5"), "name": "D5", "status": "enabled",
+                                           "lists": [other["id"]], "preconfirm_subscriptions": True})["data"]["id"]
+    cands = lambda excl: {c["id"] for c in http("GET", "/api/plus/sequences/{}/candidates?exclude_other_sequences={}&per_page=500".format(
+        seq2["id"], "true" if excl else "false"))["data"]["results"]}
+    with_other, without_other = cands(False), cands(True)
+    check("47a picker lists people who can be enrolled (D5 new, D3 in another sequence)",
+          d5 in with_other and d3 in with_other, sorted(with_other))
+    check("47b picker hides: unsubscribed (D2), stopped with re-entry 'ignore' (D1)",
+          d2 not in with_other and d1 not in with_other, sorted(with_other))
+    check("47c 'leave out people in another sequence' hides them from the picker",
+          d3 not in without_other and d5 in without_other, sorted(without_other))
+    found = http("GET", "/api/plus/sequences/{}/candidates?query={}".format(seq2["id"], urllib.parse.quote(addr("d5"))))["data"]
+    check("47d picker search by email", [c["id"] for c in found["results"]] == [d5] and found["total"] == 1, found)
+    res = http("POST", "/api/plus/sequences/{}/enrollments".format(seq2["id"]), {"subscriber_ids": [d5], "source": "manual"})["data"]
+    check("47e enrolling picked people enrolls exactly them, and they leave the picker",
+          res["enrolled"] == 1 and d5 not in cands(False), res)
+
     # --- pause / resume -----------------------------------------------------------------------------------
 
     http("PUT", "/api/plus/sequences/{}".format(S), {"status": "paused"})
