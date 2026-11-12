@@ -18,8 +18,12 @@ Fields: `trigger_enabled` (default `true`), `reentry_after_exit`: `ignore` \| `r
 `reentry_while_active`: `continue` \| `restart` (default `continue`), `from_email` (empty = Listmonk default).
 
 Status rules: `draft → active` (needs ≥1 step), `active ↔ paused`; never back to `draft`. The list can
-only change while `draft`. A list can have only one `active`/`paused` sequence with `trigger_enabled`
-(**409** otherwise, naming the existing one).
+only change while `draft`. **A list can have only one sequence** (any status): creating or moving a
+sequence onto a list that already has one returns **409**, naming the existing sequence.
+
+Step campaign names follow the form "<sequence> · Step N" and are kept up to date when the sequence
+is renamed or its steps are added, moved or deleted. A name changed by hand on the campaign screen is
+left alone.
 
 ## Steps
 

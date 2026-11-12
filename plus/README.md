@@ -39,6 +39,8 @@ LISTMONK_API_USER=... LISTMONK_API_TOKEN=... python3 -I plus/scripts/test-sequen
 ```
 
 `test-events.py` needs an API user (Admin → Users → New → type "API", role Super Admin).
+Both test scripts delete everything they create when they finish (even after a failure); set
+`KEEP_TEST_DATA=1` to keep it for inspection.
 
 ## Remotes
 

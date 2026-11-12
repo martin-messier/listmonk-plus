@@ -160,8 +160,14 @@ func (p *Plus) updateSequence(id int, in seqInput) (Sequence, error) {
 		WHERE id = $1`,
 			id, in.Name, in.Status, in.ListID, in.TriggerEnabled, in.ReentryAfterExit, in.ReentryWhileActive,
 			in.FromEmail != nil, null.StringFromPtr(in.FromEmail))
-		if err != nil || listID == cur.ListID {
+		if err != nil {
 			return err
+		}
+		if err := syncStepNames(tx, id, cur.Name); err != nil {
+			return err
+		}
+		if listID == cur.ListID {
+			return nil
 		}
 		// Draft whose list changed: move its step campaigns to the new list.
 		if _, err := tx.Exec(`DELETE FROM campaign_lists WHERE campaign_id IN
@@ -227,17 +233,13 @@ func (p *Plus) dbErr(err error, listID int) error {
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
 		switch pqErr.Constraint {
-		case "idx_plus_sequences_one_auto_per_list":
+		case "idx_plus_sequences_one_per_list":
 			var name string
-			_ = p.db.Get(&name, `SELECT name FROM plus_sequences WHERE list_id = $1 AND trigger_enabled
-			                      AND status IN ('active', 'paused') LIMIT 1`, listID)
+			_ = p.db.Get(&name, `SELECT name FROM plus_sequences WHERE list_id = $1 LIMIT 1`, listID)
 			return echo.NewHTTPError(http.StatusConflict, fmt.Sprintf(
-				"this list already has an automated sequence (%q). A list can have only one; "+
-					"pause it and turn its trigger off, or turn this sequence's trigger off", name))
+				"This list already has a sequence (%q). A list can have only one sequence.", name))
 		case "plus_sequences_list_id_fkey":
 			return errBad("list not found")
-		case "plus_sequence_steps_template_id_fkey":
-			return errBad("template not found")
 		}
 		if pqErr.Code == "22007" || pqErr.Code == "22008" || pqErr.Code == "22P02" {
 			return errBad("invalid value: %s", pqErr.Message)
@@ -337,7 +339,10 @@ func (p *Plus) addStep(seqID int, in stepInput) (Sequence, error) {
 			INSERT INTO plus_sequence_steps (sequence_id, position, delay, campaign_id, skip_landing_url)
 			VALUES ($1, $2, $3::INTERVAL, $4, NULLIF($5, ''))`,
 			seqID, pos, strings.TrimSpace(*in.Delay), camp.ID, null.StringFromPtr(in.SkipLandingURL))
-		return err
+		if err != nil {
+			return err
+		}
+		return syncStepNames(tx, seqID, seq.Name)
 	})
 	if err != nil {
 		// Don't leave an orphan campaign behind.
@@ -381,8 +386,8 @@ func (p *Plus) updateStep(seqID, stepID int, in stepInput) (Sequence, error) {
 			}
 			// Shift the steps between the old and new position by one.
 			if _, err := tx.Exec(`
-				UPDATE plus_sequence_steps SET position = position + CASE WHEN $2 > $3 THEN 1 ELSE -1 END
-				WHERE sequence_id = $1 AND position BETWEEN LEAST($2, $3) AND GREATEST($2, $3) AND id <> $4`,
+				UPDATE plus_sequence_steps SET position = position + CASE WHEN $2::INT > $3::INT THEN 1 ELSE -1 END
+				WHERE sequence_id = $1 AND position BETWEEN LEAST($2::INT, $3::INT) AND GREATEST($2::INT, $3::INT) AND id <> $4`,
 				seqID, cur.Position, to, stepID); err != nil {
 				return err
 			}
@@ -398,7 +403,10 @@ func (p *Plus) updateStep(seqID, stepID int, in stepInput) (Sequence, error) {
 			WHERE id = $1`,
 			stepID, null.StringFromPtr(trimPtr(in.Delay)),
 			in.SkipLandingURL != nil, null.StringFromPtr(in.SkipLandingURL))
-		return err
+		if err != nil {
+			return err
+		}
+		return syncStepNames(tx, seqID, seq.Name)
 	})
 	if err != nil {
 		return seq, p.dbErr(err, seq.ListID)
@@ -433,9 +441,11 @@ func (p *Plus) deleteStep(seqID, stepID int) (Sequence, error) {
 		if _, err := tx.Exec(`SET CONSTRAINTS ALL DEFERRED`); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`UPDATE plus_sequence_steps SET position = position - 1, updated_at = NOW()
-		                   WHERE sequence_id = $1 AND position > $2`, seqID, st.Position)
-		return err
+		if _, err := tx.Exec(`UPDATE plus_sequence_steps SET position = position - 1, updated_at = NOW()
+		                   WHERE sequence_id = $1 AND position > $2`, seqID, st.Position); err != nil {
+			return err
+		}
+		return syncStepNames(tx, seqID, seq.Name)
 	})
 	if err != nil {
 		return seq, err
@@ -583,6 +593,21 @@ func (p *Plus) cancelEnrollment(seqID int, enrID int64) error {
 		return errBad("no active enrollment with that id in this sequence")
 	}
 	return nil
+}
+
+// syncStepNames keeps step campaign names in the form "<sequence> · Step N" in
+// line with the sequence's name and the steps' positions. Only names that still
+// have that automatic form (with the sequence's previous name) are changed, so a
+// name the user typed on the campaign screen is left alone.
+func syncStepNames(tx *sqlx.Tx, seqID int, oldName string) error {
+	_, err := tx.Exec(`
+		UPDATE campaigns c SET name = sq.name || ' · Step ' || st.position
+		FROM plus_sequence_steps st JOIN plus_sequences sq ON sq.id = st.sequence_id
+		WHERE st.campaign_id = c.id AND st.sequence_id = $1
+		  AND STARTS_WITH(c.name, $2 || ' · Step ')
+		  AND SUBSTR(c.name, LENGTH($2 || ' · Step ') + 1) ~ '^[0-9]+$'
+		  AND c.name <> sq.name || ' · Step ' || st.position`, seqID, oldName)
+	return err
 }
 
 // --- helpers ---------------------------------------------------------------

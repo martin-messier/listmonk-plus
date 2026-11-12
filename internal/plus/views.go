@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	null "gopkg.in/volatiletech/null.v6"
 )
 
 // Data accessors for the admin HTML views (cmd/plus_views.go). The views live
@@ -18,6 +19,10 @@ type ListOption struct {
 	ID    int    `db:"id" json:"id"`
 	Name  string `db:"name" json:"name"`
 	Optin string `db:"optin" json:"optin"`
+
+	// The list's sequence, if it has one (a list can have only one).
+	SequenceID   null.Int    `db:"sequence_id" json:"sequence_id"`
+	SequenceName null.String `db:"sequence_name" json:"sequence_name"`
 }
 
 // FormOptions holds the choices for the sequence and step editors.
@@ -49,7 +54,10 @@ func (p *Plus) Enrollments(seqID int, status string, page, perPage int) ([]Enrol
 // Options returns the lists for the editors.
 func (p *Plus) Options() (FormOptions, error) {
 	out := FormOptions{Lists: []ListOption{}}
-	if err := p.db.Select(&out.Lists, `SELECT id, name, optin FROM lists WHERE status = 'active' ORDER BY LOWER(name)`); err != nil {
+	if err := p.db.Select(&out.Lists, `
+		SELECT l.id, l.name, l.optin, sq.id AS sequence_id, sq.name AS sequence_name
+		FROM lists l LEFT JOIN plus_sequences sq ON sq.list_id = l.id
+		WHERE l.status = 'active' ORDER BY LOWER(l.name)`); err != nil {
 		return out, err
 	}
 	return out, nil

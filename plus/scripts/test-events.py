@@ -10,6 +10,7 @@ for inspection; re-running is safe.
 Usage:
     LISTMONK_API_USER=plus-dev LISTMONK_API_TOKEN=... python3 -I plus/scripts/test-events.py
 """
+import atexit
 import json
 import os
 import subprocess
@@ -112,8 +113,31 @@ def check(name, marker, sub_ids, expected, wait=0.0):
 
 # --- setup -------------------------------------------------------------------
 
+CREATED_LISTS = []
+
+
+def cleanup():
+    """Delete the lists and subscribers this run created (unless KEEP_TEST_DATA=1)."""
+    if os.environ.get("KEEP_TEST_DATA") == "1":
+        return
+    sql("DELETE FROM subscribers WHERE email LIKE '%-{}@plus-test.example'".format(RUN))
+    for lid in CREATED_LISTS:
+        sql("DELETE FROM lists WHERE id = {}".format(lid))
+    sql("DELETE FROM plus_events WHERE subscriber_id IS NOT NULL AND subscriber_id NOT IN (SELECT id FROM subscribers)")
+    mailhog = os.environ.get("MAILHOG_URL", "http://localhost:8025")
+    q = urllib.parse.urlencode({"kind": "containing", "query": RUN, "limit": 1000})
+    for it in json.load(urllib.request.urlopen(mailhog + "/api/v2/search?" + q))["items"]:
+        urllib.request.urlopen(urllib.request.Request(mailhog + "/api/v1/messages/" + it["ID"], method="DELETE"))
+    print("Cleaned up run {}".format(RUN))
+
+
+atexit.register(cleanup)
+
+
 def make_list(name, optin):
-    return http("POST", "/api/lists", {"name": "{} {}".format(name, RUN), "type": "public", "optin": optin})["data"]
+    lst = http("POST", "/api/lists", {"name": "{} {}".format(name, RUN), "type": "public", "optin": optin})["data"]
+    CREATED_LISTS.append(lst["id"])
+    return lst
 
 
 single = make_list("plus-test single", "single")

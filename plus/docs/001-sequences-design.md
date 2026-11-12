@@ -10,8 +10,7 @@ to a list** (the trigger) or **manually** (bulk-enroll existing list members, or
 
 **In scope (v1)**
 - A sequence belongs to one list (its audience). Subscribing to that list is a trigger.
-- **At most one automated (trigger-enabled) sequence per list**, so a new subscriber never
-  starts two sequences at once.
+- **One sequence per list** (D5), so a new subscriber never starts two sequences from one list.
 - Manual enrollment: all/filtered existing members of the list, or individual subscribers.
 - Per-sequence re-entry rules (re-subscribe after leaving; subscribe again while in progress).
 - Ordered steps, each with a delay in **minutes, hours, or days** and an email.
@@ -260,7 +259,7 @@ Permissions (added to `permissions.json`): `sequences:get`, `sequences:manage`.
 | D2 | Subscription is one trigger; existing members can be enrolled manually (bulk or individually). |
 | D3 | Per-sequence re-entry rules: after leaving (ignore/restart) and while active (continue/restart). |
 | D4 | Send as soon as due. Delays in minutes/hours/days. "Next email now" link to skip the wait. |
-| D5 | **At most one automated (trigger-enabled) sequence per list**, enforced in the database and the editor. Sequences with the trigger off (manual enrollment only) may share a list; the enroll dialog flags people already active in another sequence. |
+| D5 | **One sequence per list**, whatever its status or trigger (clarified 2026-11-11; migration 0005 enforces it with a unique index). A manual-only sequence needs its own list. The enroll dialog flags people already active in another sequence (on another list). |
 
 ## 11a. Open questions
 

@@ -55,6 +55,9 @@
 </section>
 
 <style>
+	/* Listmonk v7's .page-heading is overflow:auto and its content is 1px too tall,
+	   which shows a stray scrollbar when scroll bars are always visible. */
+	.plus-sequence .page-heading { overflow: visible; }
 	.plus-sequence .plus-notice { margin: 0 0 var(--space-4); }
 	.plus-sequence .plus-notice svg { vertical-align: -0.15em; margin-right: var(--space-1); }
 	.plus-step { margin-bottom: var(--space-4); }
@@ -195,16 +198,18 @@
 				<select id="seq-list" required x-model.number="form.list_id" {{ if and (not $d.IsNew) (ne $s.Status "draft") }}disabled{{ end }}>
 					<option value="">Choose a list…</option>
 					<template x-for="l in opts.lists" :key="l.id">
-						<option :value="l.id" x-text="l.name + (l.optin === 'double' ? ' (double opt-in)' : '')" :selected="l.id === form.list_id"></option>
+						<option :value="l.id" :selected="l.id === form.list_id"
+							:disabled="l.sequence_id && (!seq || l.sequence_id !== seq.id)"
+							x-text="l.name + (l.optin === 'double' ? ' (double opt-in)' : '') + (l.sequence_id && (!seq || l.sequence_id !== seq.id) ? ' — already has “' + l.sequence_name + '”' : '')"></option>
 					</template>
 				</select>
-				<small data-hint>The sequence's audience. {{ if and (not $d.IsNew) (ne $s.Status "draft") }}It can't be changed once the sequence has been activated.{{ else }}It can't be changed after the sequence is activated.{{ end }}</small>
+				<small data-hint>The sequence's audience. A list can have only one sequence. {{ if and (not $d.IsNew) (ne $s.Status "draft") }}It can't be changed once the sequence has been activated.{{ else }}It can't be changed after the sequence is activated.{{ end }}</small>
 			</div>
 
 			<label data-field>
 				<input type="checkbox" role="switch" x-model="form.trigger_enabled" />
 				Start automatically when someone subscribes to this list
-				<small data-hint>On double opt-in lists, people start once they confirm. A list can have only one automatic sequence. Turn this off for a sequence you only fill by enrolling people yourself.</small>
+				<small data-hint>On double opt-in lists, people start once they confirm. Turn this off for a sequence you only fill by enrolling people yourself.</small>
 			</label>
 
 			<div data-field>
