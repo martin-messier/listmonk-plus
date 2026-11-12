@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# listmonk-plus staging: ONE-TIME setup on the server.
+# listmonk-plus production: ONE-TIME setup on the server.
 #
 #   sudo mkdir -p /srv/listmonk-plus && sudo chown "$USER" /srv/listmonk-plus
-#   git clone -b sequences https://github.com/martin-messier/listmonk-plus.git /opt/listmonk-plus
-#   /opt/listmonk-plus/plus/deploy/staging/setup.sh lists.example.com
+#   git clone -b main https://github.com/martin-messier/listmonk-plus.git /opt/listmonk-plus
+#   /opt/listmonk-plus/plus/deploy/production/setup.sh lists.example.com
 #
 # Generates /srv/listmonk-plus/.env with random passwords (never printed),
 # builds and starts the stack, then points Listmonk's root URL and SMTP at the
@@ -26,7 +26,7 @@ if [ ! -f "$ENV" ]; then
   MAILPIT_PASSWORD="$(rand 24)"
   MAILPIT_HASH="$(docker run --rm caddy:2.11 caddy hash-password --plaintext "$MAILPIT_PASSWORD")"
   cat > "$ENV" <<EOF
-# listmonk-plus staging secrets. Keep a copy in your password manager.
+# listmonk-plus production secrets. Keep a copy in your password manager.
 DOMAIN=$DOMAIN
 POSTGRES_PASSWORD=$(rand 32)
 
@@ -51,7 +51,7 @@ dc() { docker compose -f "$HERE/docker-compose.yml" --env-file "$ENV" "$@"; }
 echo "Configuring root URL, From address and SMTP (Mailpit)..."
 dc exec -T db psql -U listmonk -d listmonk -v ON_ERROR_STOP=1 -q <<SQL
 UPDATE settings SET value = to_jsonb('https://$DOMAIN'::TEXT) WHERE key = 'app.root_url';
-UPDATE settings SET value = '["listmonk-plus staging <noreply@$DOMAIN>"]'::JSONB
+UPDATE settings SET value = '["Listmonk Plus <noreply@$DOMAIN>"]'::JSONB
   WHERE key = 'app.from_email' AND value::TEXT LIKE '%yoursite.com%';
 UPDATE settings SET value = '[{
   "uuid": "6a4d2f4e-6b3e-4c55-9a3e-6d1f0b6f9a01", "name": "mailpit", "enabled": true,

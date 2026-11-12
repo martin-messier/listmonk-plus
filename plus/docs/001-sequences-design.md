@@ -277,7 +277,7 @@ Permissions (added to `permissions.json`): `sequences:get`, `sequences:manage`.
    dialog with preview. Deferred: subscriber-page panel, narrowing bulk enrollment with a subscriber
    search, translations (pages are English-only).
 4. **Hardening**: ✅ unsubscribe link + one-click headers, editor warning + activation check,
-   retries (M2), tests (44 engine + 15 event checks), docs (done 2026-11-11). ⏳ Deploy to staging on the VPS.
+   retries (M2), tests (44 engine + 15 event checks), docs (done 2026-11-11). ⏳ Deploy to production on the VPS (lists.martinmessier.ca), email caught by Mailpit until a sending service is set up.
 5. ✅ **Steps are campaigns** (M5, `003-sequence-messages-design.md`): native campaign screen per step,
    opens/clicks per step, Sequences → Analytics, safeguards against broadcasting a step.
 

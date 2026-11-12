@@ -1,4 +1,4 @@
-# listmonk-plus staging stack. Run via plus/deploy/staging/deploy.sh, which
+# listmonk-plus production stack. Run via plus/deploy/production/deploy.sh, which
 # passes --env-file /srv/listmonk-plus/.env (secrets live outside the repo).
 #
 # Only Caddy publishes ports. Docker bypasses the host firewall (ufw) for
@@ -29,7 +29,7 @@ services:
       args:
         VERSION: ${BUILD_VERSION:-v7.0.0-beta.2}
         COMMIT: ${BUILD_COMMIT:-unknown}
-    image: listmonk-plus:staging
+    image: listmonk-plus:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -57,7 +57,8 @@ services:
     volumes:
       - uploads:/listmonk/uploads
 
-  # Catches every outgoing email (staging must not reach real inboxes).
+  # Catches every outgoing email until a real sending service is configured
+  # (then point Listmonk's SMTP settings at the provider and remove this service).
   mailpit:
     image: axllent/mailpit:v1.33
     restart: unless-stopped

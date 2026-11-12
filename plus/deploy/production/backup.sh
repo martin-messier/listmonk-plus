@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# listmonk-plus staging: dump the database to /srv/listmonk-plus/backups and
+# listmonk-plus production: dump the database to /srv/listmonk-plus/backups and
 # keep the last 14 days. Run nightly from /etc/cron.d/listmonk-plus-backup.
 #
 # Restore (into the running stack; replaces current data):
-#   docker compose -f plus/deploy/staging/docker-compose.yml --env-file /srv/listmonk-plus/.env \
+#   docker compose -f plus/deploy/production/docker-compose.yml --env-file /srv/listmonk-plus/.env \
 #     exec -T db pg_restore -U listmonk -d listmonk --clean --if-exists < /srv/listmonk-plus/backups/<file>.dump
 set -euo pipefail
 

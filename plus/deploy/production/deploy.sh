@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# listmonk-plus staging: build and (re)start the stack from the current checkout.
+# listmonk-plus production: build and (re)start the stack from the current checkout.
 #
-#   plus/deploy/staging/deploy.sh            pull the branch, rebuild, restart
-#   plus/deploy/staging/deploy.sh --no-pull  rebuild what's checked out
-#   plus/deploy/staging/deploy.sh --wait-only
+#   plus/deploy/production/deploy.sh            pull the branch, rebuild, restart
+#   plus/deploy/production/deploy.sh --no-pull  rebuild what's checked out
+#   plus/deploy/production/deploy.sh --wait-only
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

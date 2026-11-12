@@ -8,6 +8,7 @@ sequences and, over time, a trigger engine.
 | `plus/docs/` | Design (`001-sequences-design.md`) and API reference (`002-sequences-api.md`) |
 | `plus/UPSTREAM-TOUCHPOINTS.md` | Every change we make to upstream files + merge checklist |
 | `plus/scripts/` | Dev helpers and end-to-end tests |
+| `plus/deploy/` | Production deployment (Docker Compose, Caddy, backups) — see `plus/deploy/README.md` |
 | `internal/plus/` | Go code and SQL (migrations, triggers) |
 
 ## Local development
@@ -44,6 +45,7 @@ Both test scripts delete everything they create when they finish (even after a f
 
 ## Remotes
 
-- `origin`: our private repo.
+- `origin`: https://github.com/martin-messier/listmonk-plus (public). `main` = what runs in production;
+  work happens on branches and is merged through pull requests.
 - `upstream`: https://github.com/knadh/listmonk (fetch new releases from here; see the merge
   checklist in `UPSTREAM-TOUCHPOINTS.md`).

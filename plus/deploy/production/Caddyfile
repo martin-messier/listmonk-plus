@@ -1,4 +1,4 @@
-# listmonk-plus staging. HTTPS certificates are obtained automatically.
+# listmonk-plus production. HTTPS certificates are obtained automatically.
 {$DOMAIN} {
 	encode zstd gzip
 
