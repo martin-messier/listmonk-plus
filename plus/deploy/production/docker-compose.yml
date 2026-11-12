@@ -57,32 +57,16 @@ services:
     volumes:
       - uploads:/listmonk/uploads
 
-  # Catches every outgoing email until a real sending service is configured
-  # (then point Listmonk's SMTP settings at the provider and remove this service).
-  mailpit:
-    image: axllent/mailpit:v1.33
-    restart: unless-stopped
-    environment:
-      MP_WEBROOT: mailpit
-      MP_MAX_MESSAGES: 5000
-      MP_SMTP_AUTH_ACCEPT_ANY: "true"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
-    volumes:
-      - mailpit-data:/data
-    command: ["--database", "/data/mailpit.db"]
-
   caddy:
     image: caddy:2.11
     restart: unless-stopped
-    depends_on: [app, mailpit]
+    depends_on: [app]
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN:?set in .env}
-      MAILPIT_USER: ${MAILPIT_USER}
-      MAILPIT_HASH: ${MAILPIT_HASH}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -91,6 +75,5 @@ services:
 volumes:
   db-data:
   uploads:
-  mailpit-data:
   caddy-data:
   caddy-config:

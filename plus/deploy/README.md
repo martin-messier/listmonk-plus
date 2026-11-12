@@ -3,14 +3,13 @@
 ## Production (`plus/deploy/production/`)
 
 The stack running at https://lists.martinmessier.ca. A self-contained Docker Compose stack: **Listmonk (this fork, built from source)**, **PostgreSQL 18**,
-**Mailpit** (catches every outgoing email until a sending service such as SES/Postmark/Brevo is
-configured, so nothing reaches real inboxes yet) and **Caddy** (HTTPS via
-Let's Encrypt). Only Caddy publishes ports (80/443): Docker bypasses ufw for published ports.
+and **Caddy** (HTTPS via Let's Encrypt). Email is sent through **Amazon SES** (us-east-1),
+configured in Listmonk → Settings → SMTP. Only Caddy publishes ports (80/443): Docker bypasses ufw for published ports.
 
 | Path on the server | What |
 |---|---|
 | `/opt/listmonk-plus` | Git checkout (branch `main`; production only runs merged work) |
-| `/srv/listmonk-plus/.env` | Secrets (DB, admin, Mailpit passwords), mode 600. **Not in git.** |
+| `/srv/listmonk-plus/.env` | Secrets (DB and initial admin password), mode 600. **Not in git.** |
 | `/srv/listmonk-plus/backups/` | Nightly `pg_dump` (03:15 UTC, 14 days kept) + `backup.log` |
 | `/etc/cron.d/listmonk-plus-backup` | The backup schedule |
 
@@ -47,11 +46,15 @@ Restore a backup: see the header of `backup.sh`.
 docker build -f plus/deploy/Dockerfile --build-arg COMMIT=$(git rev-parse --short HEAD) -t listmonk-plus .
 ```
 
-### Going live with real email
+### Email sending (Amazon SES)
 
-1. Choose a sending service and verify `martinmessier.ca` there (SPF, DKIM, DMARC DNS records).
-2. In Listmonk → Settings → SMTP, add the provider and disable the "mailpit" server.
-3. Remove the `mailpit` service and the `/mailpit*` block from the Caddyfile, then `deploy.sh`.
+- Sending domain: `lists.martinmessier.ca` (SES identity in **us-east-1**, Easy DKIM, custom MAIL FROM
+  `bounce.lists.martinmessier.ca`). DNS at WPX: 3 DKIM CNAMEs, MX + SPF on `bounce.lists`,
+  DMARC on `_dmarc.lists` (`p=none` to start).
+- Listmonk → Settings → SMTP: `email-smtp.us-east-1.amazonaws.com:587`, STARTTLS, LOGIN with the SES
+  SMTP credentials (IAM user created under "IAM SMTP credentials"; kept in the password manager).
+- Message rate (Settings → Performance) must stay at or below the SES maximum send rate.
+- `setup.sh` never changes SMTP settings, so re-running it is safe.
 
 ### Off-server backups
 
