@@ -74,6 +74,7 @@
 	.plus-enroll-dialog .dialog-card { width: 100%; box-sizing: border-box; }
 	.plus-enroll-dialog .plus-check { display: flex; flex-direction: row; flex-wrap: nowrap; gap: var(--space-2); align-items: flex-start; }
 	.plus-enroll-dialog .plus-check span { flex: 1; min-width: 0; }
+	.plus-enroll-dialog .plus-modes { display: flex; flex-direction: column; gap: var(--space-2); }
 	.plus-enroll-dialog .plus-check input { flex: none; margin-top: .2em; }
 	.plus-pick, .plus-pick-bar, .plus-pick-bar input { box-sizing: border-box; max-width: 100%; }
 	.plus-pick-row span { overflow-wrap: anywhere; }
@@ -346,9 +347,9 @@
 		<div class="dialog-card content">
 			<header class="dialog-head"><h4 class="dialog-title">Enroll people in "{{ $s.Name }}"</h4></header>
 			<section class="dialog-body">
-				<div data-field>
-					<label><input type="radio" value="all" x-model="enrollForm.mode" @change="enrollPreview = null" /> Everyone on the list "{{ $s.ListName }}"</label>
-					<label><input type="radio" value="pick" x-model="enrollForm.mode" @change="enrollPreview = null; loadCandidates(1)" data-testid="enroll-mode-pick" /> Specific subscribers</label>
+				<div data-field class="plus-modes" role="radiogroup" aria-label="Who to enroll">
+					<label class="plus-check"><input type="radio" value="all" x-model="enrollForm.mode" @change="enrollPreview = null" /> <span>Everyone on the list "{{ $s.ListName }}"</span></label>
+					<label class="plus-check"><input type="radio" value="pick" x-model="enrollForm.mode" @change="enrollPreview = null; loadCandidates(1)" data-testid="enroll-mode-pick" /> <span>Specific subscribers</span></label>
 				</div>
 
 				{{- /* Specific subscribers: the "leave out" option comes first, then the picker. */}}
